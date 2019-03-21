@@ -100,7 +100,7 @@ classify_violations <- function(sampledsnvs) {
 
 
 
-simulate_snvs_chr <- function(chridx, nmutsim_chr, callablegenome, trinucs, mutspectrum_chr_norm, sizefactor = 35) {
+simulate_snvs_chr <- function(chridx, nmutsim_chr, callablegenome, trinucs, mutspectrum_chr_norm, sizefactor = 50) {
   
   # print(paste0("chr", chridx))
   
@@ -133,6 +133,12 @@ simulate_snvs_chr <- function(chridx, nmutsim_chr, callablegenome, trinucs, muts
   # uniform sampling to check for acceptance of mutation
   sampleranges$initunif <- runif(n = length(sampleranges), min = 0, max = 1)
   inithitidxs <- which(sampleranges$initunif < acceptpertrinuc[as.character(sampleranges$trinuc)])
+  
+  while (length(inithitidxs) < nmutsim_chr[[chridx]]) {
+    print(paste0("Needed resamplng from uniform"))
+    sampleranges$initunif <- runif(n = length(sampleranges), min = 0, max = 1)
+    inithitidxs <- which(sampleranges$initunif < acceptpertrinuc[as.character(sampleranges$trinuc)])
+  }
   
   # identify all double hits (i.e. same position & same copy)
   doublehits <- findOverlaps(query = sampleranges, type = "equal", drop.self = T, drop.redundant = T)
@@ -175,18 +181,13 @@ simulate_snvs_chr <- function(chridx, nmutsim_chr, callablegenome, trinucs, muts
   }
   
   sampledsnvs <- sampledsnvs[order(sampledsnvs$timestep, decreasing = F)]
-  
-  if (length(sampledsnvs) >= nmutsim_chr[[chridx]]) {
+
     # get final set of mutations
     sampledsnvs <- sampledsnvs[1:nmutsim_chr[[chridx]]]
     
     # final classification
     isaviolations <- classify_violations(sampledsnvs = sampledsnvs)
-  } else {
-    # browser()
-    isaviolations <- simulate_snvs_chr(chridx = chridx, nmutsim_chr = nmutsim_chr, callablegenome = callablegenome, trinucs = trinucs, mutspectrum_chr_norm = mutspectrum_chr_norm, sizefactor = sizefactor + 10)
-  }
-  
+
   return(isaviolations)
 }
 
@@ -218,8 +219,8 @@ simulate_snvs_sample_single_iteration <- function(mutspectrum, trinucs, callable
   
   #### per chromosome
   isaviolations_single_iteration <- mclapply(X = names(nmutsim_chr), FUN = simulate_snvs_chr, nmutsim_chr = nmutsim_chr, trinucs = trinucs, callablegenome = callablegenome, mutspectrum_chr_norm = mutspectrum_chr_norm, mc.preschedule = F, mc.cores = ncores)
-  # combine and return
   
+  # combine and return
   isaviolations_single_iteration <- Reduce('+', lapply(isaviolations_single_iteration, FUN = function(x) x[, c("freqbf", "freqal")]))
   
   return(isaviolations_single_iteration)
@@ -247,9 +248,7 @@ generate_isa_breakdown_file <- function(sampleid, outdir, snvindeldir, nsims, nc
   mutspectrum <- get_mutspectrum(mutations = snvs, trinucs = trinucs)
   
   isaviolations <- mclapply(X = 1:nsims, FUN = function(x) {print(paste0("simulation ", x)); simulate_snvs_sample_single_iteration(mutspectrum = mutspectrum, trinucs = trinucs, callablegenome = callablegenome, callableseqtrinucsbychrom = callableseqtrinucsbychrom, ncores = 1)}, mc.allow.recursive = F, mc.preschedule = T, mc.cores = ncores)
-  # isaviolations <- lapply(X = 1:nsims, FUN = function(x) simulate_snvs_sample_single_iteration(mutspectrum = mutspectrum, trinucs = trinucs, callablegenome = callablegenome, callableseqtrinucsbychrom = callableseqtrinucsbychrom, ncores = 1))
-  
-  # browser()
+  # isaviolations <- lapply(X = 1:nsims, FUN = function(x) {print(paste0("simulation ", x)); simulate_snvs_sample_single_iteration(mutspectrum = mutspectrum, trinucs = trinucs, callablegenome = callablegenome, callableseqtrinucsbychrom = callableseqtrinucsbychrom, ncores = 1)})
   
   bfcounts <- t(apply(X = do.call(cbind, lapply(isaviolations, function(x) x$freqbf)), MARGIN = 1, FUN = quantile, probs = c(.025, .5, .975), simplify = T))
   alcounts <- t(apply(X = do.call(cbind, lapply(isaviolations, function(x) x$freqal)), MARGIN = 1, FUN = quantile, probs = c(.025, .5, .975), simplify = T))
@@ -303,7 +302,7 @@ rm(callableseq, callableseqtrinucs)
 
 # sampleid <- "deb9fbb6-656b-41ce-8299-554efc2379bd"
 # sampleid <- "2df02f2b-9f1c-4249-b3b4-b03079cd97d9"
-# sampleid <- "fc876f51-0577-3b53-e040-11ac0d48515e"
+# sampleid <- "fc876f5c-8339-bc9c-e040-11ac0d485160"
 
 
 # estisaviolations <- generate_isa_breakdown_file(sampleid = releasetable$tumor_wgs_aliquot_id[1], outdir = OUTDIR, snvindeldir = SNVMNVINDELDIR, nsims = NSIMS,
@@ -322,10 +321,10 @@ generate_isa_breakdown_file_slurmwrap <- function(sampleid) {
 # debug(get_mutspectrum)
 # generate_isa_breakdown_file_slurmwrap(sampleid = sampleid)
 
-
+# 
 isajob <- slurm_apply(f = generate_isa_breakdown_file_slurmwrap, params = rslurmdf[,,drop=F], jobname = "isajob", nodes = 250, cpus_per_node = 1, add_objects = ls(),
                           pkgs = rev(.packages()), libPaths = .libPaths(), submit = T)
-# print_job_status(phasingjob)
+
 
 
 
