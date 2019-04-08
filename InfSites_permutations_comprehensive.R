@@ -100,28 +100,9 @@ classify_violations <- function(sampledsnvs) {
 
 
 
-simulate_snvs_chr <- function(chridx, nmutsim_chr, callablegenome, trinucs, mutspectrum_chr_norm, sizefactor = 50) {
+simulate_snvs_chr <- function(chridx, nmutsim_chr, callablegenome, trinucs, mutspectrum_chr_norm, sizefactor = 25) {
   
   # print(paste0("chr", chridx))
-  
-  # sample mappable positions
-  sampleranges <- GRanges(seqnames = chridx, ranges = IRanges(start = sample(x = 1:seqlengths(BSgenome.Hsapiens.1000genomes.hs37d5)[[chridx]], size = sizefactor*nmutsim_chr[[chridx]], replace = T), width = 3), seqinfo = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
-  sampleranges <- subsetByOverlaps(x = sampleranges, ranges = callablegenome)
-  
-  # keep track of "time"
-  sampleranges$timestep <- 1:length(sampleranges)
-  
-  # annotate with trinuc context and copy (encoded as strand here)
-  sampleranges$trinuc <- getSeq(sampleranges, x = BSgenome.Hsapiens.1000genomes.hs37d5)
-  agidxs <- which(as.character(subseq(sampleranges$trinuc, 2, 2)) %in% c("A", "G"))
-  mcols(sampleranges)[agidxs, "trinuc"] <- reverseComplement(mcols(sampleranges)[agidxs, "trinuc"])
-  strand(sampleranges) <- sample(x = c("+", "-"), size = length(sampleranges), replace = T)
-  
-  # omit trinucs containing N's
-  naidxs <- grep(pattern = "N", x = sampleranges$trinuc)
-  if (length(naidxs) > 0) {
-    sampleranges <- sampleranges[-naidxs]
-  }
   
   # get probabilities for types and acceptance rate for mutations
   probspertrinuc <- c(by(data = mutspectrum_chr_norm[chridx,], INDICES = trinucs$trinucleotides, FUN = sum))
@@ -130,14 +111,41 @@ simulate_snvs_chr <- function(chridx, nmutsim_chr, callablegenome, trinucs, muts
   probsmuttype <- split(x = setNames(object = mutspectrum_chr_norm[chridx,], nm = substr(x = colnames(mutspectrum_chr_norm), 5,5)), f = trinucs$trinucleotides)
   probsmuttype <- lapply(probsmuttype, FUN = function(x) x/sum(x))
   
-  # uniform sampling to check for acceptance of mutation
-  sampleranges$initunif <- runif(n = length(sampleranges), min = 0, max = 1)
-  inithitidxs <- which(sampleranges$initunif < acceptpertrinuc[as.character(sampleranges$trinuc)])
   
-  while (length(inithitidxs) < nmutsim_chr[[chridx]]) {
-    print(paste0("Needed resamplng from uniform"))
+  inithitidxs <- integer()
+  while (length(inithitidxs) < 1.01*nmutsim_chr[[chridx]]) {
+    
+    # sample mappable positions
+    sampleranges <- GRanges(seqnames = chridx, ranges = IRanges(start = sample(x = 1:seqlengths(BSgenome.Hsapiens.1000genomes.hs37d5)[[chridx]], size = sizefactor*nmutsim_chr[[chridx]], replace = T), width = 3), seqinfo = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
+    sampleranges <- subsetByOverlaps(x = sampleranges, ranges = callablegenome)
+    
+    # keep track of "time"
+    sampleranges$timestep <- 1:length(sampleranges)
+    
+    # annotate with trinuc context and copy (encoded as strand here)
+    sampleranges$trinuc <- getSeq(sampleranges, x = BSgenome.Hsapiens.1000genomes.hs37d5)
+    agidxs <- which(as.character(subseq(sampleranges$trinuc, 2, 2)) %in% c("A", "G"))
+    mcols(sampleranges)[agidxs, "trinuc"] <- reverseComplement(mcols(sampleranges)[agidxs, "trinuc"])
+    strand(sampleranges) <- sample(x = c("+", "-"), size = length(sampleranges), replace = T)
+    
+    # omit trinucs containing N's
+    naidxs <- grep(pattern = "N", x = sampleranges$trinuc)
+    if (length(naidxs) > 0) {
+      sampleranges <- sampleranges[-naidxs]
+    }
+    
+    # uniform sampling to check for acceptance of mutation
     sampleranges$initunif <- runif(n = length(sampleranges), min = 0, max = 1)
+    
+    # extend with new iteration and shift timestep
+    if (exists(x = "sampleranges_previousit")) {
+      sampleranges$timestep <- sampleranges$timestep + length(sampleranges_previousit)
+      sampleranges <- c(sampleranges_previousit, sampleranges)
+    }
+    
     inithitidxs <- which(sampleranges$initunif < acceptpertrinuc[as.character(sampleranges$trinuc)])
+    
+    sampleranges_previousit <- sampleranges
   }
   
   # identify all double hits (i.e. same position & same copy)
@@ -249,7 +257,7 @@ generate_isa_breakdown_file <- function(sampleid, outdir, snvindeldir, nsims, nc
   
   isaviolations <- mclapply(X = 1:nsims, FUN = function(x) {print(paste0("simulation ", x)); simulate_snvs_sample_single_iteration(mutspectrum = mutspectrum, trinucs = trinucs, callablegenome = callablegenome, callableseqtrinucsbychrom = callableseqtrinucsbychrom, ncores = 1)}, mc.allow.recursive = F, mc.preschedule = T, mc.cores = ncores)
   # isaviolations <- lapply(X = 1:nsims, FUN = function(x) {print(paste0("simulation ", x)); simulate_snvs_sample_single_iteration(mutspectrum = mutspectrum, trinucs = trinucs, callablegenome = callablegenome, callableseqtrinucsbychrom = callableseqtrinucsbychrom, ncores = 1)})
-  
+  # browser()
   bfcounts <- t(apply(X = do.call(cbind, lapply(isaviolations, function(x) x$freqbf)), MARGIN = 1, FUN = quantile, probs = c(.025, .5, .975), simplify = T))
   alcounts <- t(apply(X = do.call(cbind, lapply(isaviolations, function(x) x$freqal)), MARGIN = 1, FUN = quantile, probs = c(.025, .5, .975), simplify = T))
   finalcounts <- cbind(expand.grid(factor(trinucs$trinucleotides_mutations), factor(trinucs$trinucleotides_mutations)), bfcounts, alcounts)
@@ -263,6 +271,7 @@ generate_isa_breakdown_file <- function(sampleid, outdir, snvindeldir, nsims, nc
   finalcounts <- rbind(finalcounts, totals)
   
   write.table(x = finalcounts, file = file.path(outdir, paste0(sampleid, "_infsites_backfwd_allelic.txt")), quote = F, sep = "\t", row.names = F)
+  saveRDS(object = isaviolations, file = file.path(outdir, paste0(sampleid, "_infsites_violations.rds")))
   
   return(finalcounts)
 }
@@ -297,18 +306,23 @@ callableseqtrinucsbychrom <- callableseqtrinucsbychrom[, unique(trinucs$trinucle
 rslurmdf <- read_pcawg_release_table(release_table_file = RELEASETABLEFILE)[, "tumor_wgs_aliquot_id" , drop = F]
 colnames(rslurmdf) <- "sampleid"
 
+# do not redo stuff for now
+doneids <- gsub(pattern = "_infsites_backfwd_allelic.txt", replacement = "", x = list.files(path = OUTDIR, pattern = "_infsites_backfwd_allelic.txt$"))
+rslurmdf <- rslurmdf[!rslurmdf$sampleid %in% doneids,, drop = F]
+
 rm(callableseq, callableseqtrinucs)
 
 
 # sampleid <- "deb9fbb6-656b-41ce-8299-554efc2379bd"
 # sampleid <- "2df02f2b-9f1c-4249-b3b4-b03079cd97d9"
 # sampleid <- "fc876f5c-8339-bc9c-e040-11ac0d485160"
+# sampleid <- "7cae6c0b-36fe-411b-bbba-093a4c846d84"
+# sampleid <- "0332b017-17d5-4083-8fc4-9d6f8fdbbbde"
+# sampleid <- "322f0b01-2118-4dbe-aba1-3875a54ee71b"
 
 
 # estisaviolations <- generate_isa_breakdown_file(sampleid = releasetable$tumor_wgs_aliquot_id[1], outdir = OUTDIR, snvindeldir = SNVMNVINDELDIR, nsims = NSIMS,
 #                             ncores = NCORES, callablegenome = callablegenome, trinucs = trinucs, callableseqtrinucsbychrom = callableseqtrinucsbychrom)
-
-
 
 #### slurm wrapping
 generate_isa_breakdown_file_slurmwrap <- function(sampleid) {
@@ -322,7 +336,7 @@ generate_isa_breakdown_file_slurmwrap <- function(sampleid) {
 # generate_isa_breakdown_file_slurmwrap(sampleid = sampleid)
 
 # 
-isajob <- slurm_apply(f = generate_isa_breakdown_file_slurmwrap, params = rslurmdf[,,drop=F], jobname = "isajob", nodes = 250, cpus_per_node = 1, add_objects = ls(),
+isajob <- slurm_apply(f = generate_isa_breakdown_file_slurmwrap, params = rslurmdf[,,drop=F], jobname = "isajob3", nodes = 40, cpus_per_node = 1, add_objects = ls(),
                           pkgs = rev(.packages()), libPaths = .libPaths(), submit = T)
 
 
