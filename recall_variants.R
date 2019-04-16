@@ -92,8 +92,8 @@ outtab <- table(rslurmdf$dcc_project_code, rslurmdf$tumor_wgs_aliquot_id %in% hi
 sort(outtab[,2]/rowSums(outtab))
 
 # three top cohorts are COAD-US, SKCM-US, MELA-AU
-rslurmdf <- rslurmdf[(rslurmdf$dcc_project_code %in% c("MELA-AU") | rslurmdf$tumor_wgs_aliquot_id %in% hitters) &
-                       rslurmdf$wgs_exclusion_white_gray == "Whitelist" & (is.na(rslurmdf$TiN) | rslurmdf$TiN == 0) ,  ]
+rslurmdf <- rslurmdf[which((rslurmdf$dcc_project_code %in% c("MELA-AU") | rslurmdf$tumor_wgs_aliquot_id %in% hitters) &
+                       rslurmdf$wgs_exclusion_white_gray == "Whitelist" & (is.na(rslurmdf$TiN) | rslurmdf$TiN == 0)) ,  ]
 
 # prepare all the normals
 # any(duplicated(rslurmdf$normal_wgs_bwa_alignment_bam_file_name))

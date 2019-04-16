@@ -1,6 +1,7 @@
 ## check for each signature probs of forward, back (same copy) and parallel, third allele (other copy)
 
 library(ggplot2)
+library(BSgenome.Hsapiens.1000genomes.hs37d5)
 library(Biostrings)
 
 source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/genecon/mutation_spectrum_analysis_functions_20181206.R")
@@ -49,6 +50,10 @@ longdf$type <- ifelse(longdf$reftri1 == longdf$reftri2,
 longdf$type <- factor(longdf$type, levels = c("back", "forward", "parallel", "third_allele", "empty"))
 longdf <- longdf[!(longdf$type == "third_allele" & as.integer(longdf$mut1) > as.integer(longdf$mut2)), ]
 
+### normaize by trinucfreq
+callableseqtrinucs <- colSums(trinucleotideFrequency(getSeq(BSgenome.Hsapiens.1000genomes.hs37d5)))
+callableseqtrinucs <- callableseqtrinucs[unique(bases$trinucleotides)] + callableseqtrinucs[as.character(reverseComplement(DNAStringSet(unique(bases$trinucleotides))))]
+callableseqtrinucs <- callableseqtrinucs/sum(callableseqtrinucs)
 
 
 OUTDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isaviolationtypes_persig/"
@@ -60,6 +65,8 @@ for (signat in signats) {
   longdf[longdf$type %in% c("parallel", "third_allele"), "prob"] <- 2*longdf[longdf$type %in% c("parallel", "third_allele"), "prob"]
 
   longdf[longdf$type == "empty", "prob"] <- 0
+  longdf$prob <- longdf$prob/sum(longdf$prob)
+  longdf$prob <- longdf$prob/callableseqtrinucs[longdf$reftri1]
   longdf$prob <- longdf$prob/sum(longdf$prob)
 
   
@@ -73,6 +80,7 @@ for (signat in signats) {
   p2 <- p2 + theme_minimal() + scale_fill_brewer(type = "qual", palette = "Set1")
   # p2
   
-  ggsave(filename = file.path(OUTDIR, paste0(signat, "_heatmap_p01.pdf")), plot = p1, width = 12, height = 12)
-  ggsave(filename = file.path(OUTDIR, paste0(signat, "_typeprobs.pdf")), plot = p2, width = 4, height = 4)
+  ggsave(filename = file.path(OUTDIR, paste0(signat, "_heatmap_p01_norm.pdf")), plot = p1, width = 12, height = 12)
+  ggsave(filename = file.path(OUTDIR, paste0(signat, "_typeprobs_norm.pdf")), plot = p2, width = 4, height = 4)
+  write.table(x = longdf[longdf$type != "empty", c("mut1", "mut2", "type", "prob")], file = file.path(OUTDIR, paste0(signat, "_typeprobs_norm_table.txt")), quote = F, sep = "\t", col.names = T, row.names = F)
 }
