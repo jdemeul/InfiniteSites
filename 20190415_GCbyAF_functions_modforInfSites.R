@@ -253,6 +253,18 @@ test_clean_sites <- function(sampledir, sampleid, segments_gr, phasedbaf_gr, snv
   snvseghits <- findOverlaps(query = snvs_vcf, subject = segments_gr)
   snvs_vcf <- snvs_vcf[queryHits(snvseghits)]
   
+  # independent filtering (check to see whether useful at PCAWG coverage)
+    pfilter <- mcmapply(size = mcols(snvs_vcf)$t_alt_count + mcols(snvs_vcf)$t_ref_count,
+                        q = mcols(snvs_vcf)$t_alt_count + mcols(snvs_vcf)$t_ref_count,
+                        shape1 = mcols(segments_gr)[subjectHits(snvseghits), "mu_vaf"]*pseudocount_calibr,
+                        shape2 = (1-mcols(segments_gr)[subjectHits(snvseghits), "mu_vaf"])*pseudocount_calibr,
+                        FUN = betabinom.test.ab,
+                        MoreArgs = list(alternative = "greater"),
+                        mc.preschedule = presched,
+                        mc.cores = ncores)
+  ### end of filtering
+  
+  
   pvalsnv <- mcmapply(size = mcols(snvs_vcf)$t_alt_count + mcols(snvs_vcf)$t_ref_count,
                      q = mcols(snvs_vcf)$t_alt_count,
                      shape1 = mcols(segments_gr)[subjectHits(snvseghits), "mu_vaf"]*pseudocount_calibr,
@@ -262,6 +274,7 @@ test_clean_sites <- function(sampledir, sampleid, segments_gr, phasedbaf_gr, snv
                      mc.preschedule = presched,
                      mc.cores = ncores)
   
+  pfilter[which(pfilter < .Machine$double.eps)] <- .Machine$double.eps
   pvalsnv[which(pvalsnv < .Machine$double.eps)] <- .Machine$double.eps
   # padjsnv <- p.adjust(pvalsnv, method = "fdr")
   
@@ -305,7 +318,11 @@ test_clean_sites <- function(sampledir, sampleid, segments_gr, phasedbaf_gr, snv
   # snvs_vcf <- snvs_vcf[snvpassidxs]
   
   mcols(snvs_vcf)$pval <- pvalsnv
+  mcols(snvs_vcf)$pfilt <- pfilter
   mcols(snvs_vcf) <- cbind(mcols(snvs_vcf), mcols(segments_gr)[subjectHits(snvseghits), c("total_cn", "major_cn", "minor_cn") ])
+  
+  # add number of proximal hetSNPs (biases allele counts when 2x alt on ref/alt allele)
+  mcols(snvs_vcf)$nhetsnps25bp <- countOverlaps(query = snvs_vcf, subject = phasedbaf_gr, maxgap = 25)
   
   # annotate hits with upstream and downstream BAF/LogR of SNPS
   # BAF
@@ -339,8 +356,8 @@ test_clean_sites <- function(sampledir, sampleid, segments_gr, phasedbaf_gr, snv
   #                              countOverlaps(query = allhits, subject = allhits, maxgap = conversionlength) == 0)
 
   outdf <- data.frame(chr = seqnames(snvs_vcf), start = start(snvs_vcf), end = end(snvs_vcf), ref = as.character(snvs_vcf$REF), alt = as.character(unlist(snvs_vcf$ALT)))
-  outdf <- cbind(outdf, as.data.frame(mcols(snvs_vcf)[, c("VAF", "t_alt_count", "t_ref_count", "snv_near_indel", "Variant_Classification", "immune_locus", "pval",
-                                                          "total_cn", "major_cn", "minor_cn", "bafpos_pre", "bafpos_post", "bafpval_pre", "bafpval_post", 
+  outdf <- cbind(outdf, as.data.frame(mcols(snvs_vcf)[, c("VAF", "t_alt_count", "t_ref_count", "snv_near_indel", "Variant_Classification", "immune_locus", "pval", "pfilt",
+                                                          "nhetsnps25bp", "total_cn", "major_cn", "minor_cn", "bafpos_pre", "bafpos_post", "bafpval_pre", "bafpval_post", 
                                                           "logrpos_pre", "logrpos_post", "logrpval_pre", "logrpval_post")]))
   write.table(x = outdf, file = file.path(sampledir, paste0(sampleid, "_snv_mnv_infSites_annotated.txt")), sep = "\t", quote = F, col.names = T, row.names = F)
   

@@ -161,10 +161,10 @@ rslurmdf <- releasetable[, "tumor_wgs_aliquot_id", drop = F]
 colnames(rslurmdf) <- "sampleid"
 
 # debug(run_baflogr_pipeline)
-debug(test_clean_sites)
+# debug(test_clean_sites)
 # debug(annotate_gc_hits)
 # run_baflogr_pipeline(sampleid = rslurmdf[4,])
-run_baflogr_pipeline(sampleid = "deb9fbb6-656b-41ce-8299-554efc2379bd")
+run_baflogr_pipeline(sampleid = "bc395326-1656-4ef2-bb19-0cb29194b91c")
 # baflogrjob <- slurm_apply(f = run_baflogr_pipeline, params = rslurmdf[,, drop = F], jobname = "baflogr_run4", nodes = 463, cpus_per_node = 6, add_objects = ls(),
 #                           pkgs = rev(.packages()), libPaths = .libPaths(), slurm_options = list(), submit = T)
 

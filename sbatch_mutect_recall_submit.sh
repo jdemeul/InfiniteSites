@@ -1,16 +1,15 @@
 #!/bin/bash
 #
-#SBATCH --job-name=isa_m2_pcawg2
-#SBATCH --output=isa_m2_pcawg2%A_%a.out
-#SBATCH --error=isa_m2_pcawg2%A_%a.err
+#SBATCH --job-name=isa_m2_pcawg4
+#SBATCH --output=isa_m2_pcawg4%A_%a.out
+#SBATCH --error=isa_m2_pcawg4%A_%a.err
 #
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=10G
 #
-#SBATCH --array=2-4,6-209
+#SBATCH --array=2-209
 #SBATCH --exclude=compute001
-
 
 declare -a naidar
 declare -a taidar
