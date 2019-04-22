@@ -9,8 +9,11 @@ library(parallel)
 library(ggplot2)
 library(MASS)
 library(VGAM)
+library(ROCR)
+library(boot)
 library(VariantAnnotation)
 # library(rslurm)
+
 
 # genome
 library(BSgenome.Hsapiens.1000genomes.hs37d5)
@@ -26,12 +29,13 @@ LOGRDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversio
 RHOPSI <- "/srv/shared/vanloo/ICGC_consensus_copynumber/20170119_release/consensus.20170217.purity.ploidy.txt.gz"
 CNDIR <- "/srv/shared/vanloo/ICGC_consensus_copynumber/20170119_release/"
 
+
 ####
 
 # rhopsi
 rhopsi <- read.delim(file = RHOPSI, as.is = T)
 
-NCORES <- 10
+NCORES <- 8
 
 TEMPDIR <- "/home/jdemeul/temp/"
 ALLELECOUNTSDIR <- "/srv/shared/vanloo/ICGC_copynumber/battenberg_raw_files/allelecounts/"
@@ -42,6 +46,8 @@ BAFDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion
 # CNDIR <- "/srv/shared/vanloo/ICGC_consensus_copynumber/20170119_release/"
 BASEOUT <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out/"
 # BAMDIR <- "/srv/shared/vanloo/ICGC/"
+PHASINGDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/results/20181021_hetSNPs_all+phasing_out/"
+
 
 
 ### load one time only
@@ -60,6 +66,7 @@ immune_loci <- GRanges(seqnames = c(14, 7, 7, 14, 2, 22, 6), ranges = IRanges(st
 # sampleid <- releasetable[1, "tumor_wgs_aliquot_id"]
 # sampleid <- "deb9fbb6-656b-41ce-8299-554efc2379bd"
 # sampleid <- "b2ec0fd0-fbcf-4abc-ad80-4ae444e30b55"
+# sampleid <- "04aa6b77-8074-480c-872e-a1a47afa5314"
 ####################
 
 
@@ -135,6 +142,14 @@ run_baflogr_pipeline <- function(sampleid) {
                                   recompute_pseudocoverage = F,
                                   immune_loci = immune_loci)
   
+  
+  print(paste0("Annotating with phasing and deriving violations for sample ", sampleid))
+  finhits <- call_parallel_violations(sampleid = sampleid,
+                                      sampledir = sampledir,
+                                      phasingdir = PHASINGDIR,
+                                      nboot = 100)
+  
+  
   # debug(annotate_gc_hits)
   # print(paste0("Annotating loci for sample ", sampleid))
   # hitvariants_annotated <- annotate_gc_hits(hitvariants = hitvariants$hitvariants,
@@ -164,7 +179,7 @@ colnames(rslurmdf) <- "sampleid"
 # debug(test_clean_sites)
 # debug(annotate_gc_hits)
 # run_baflogr_pipeline(sampleid = rslurmdf[4,])
-run_baflogr_pipeline(sampleid = "bc395326-1656-4ef2-bb19-0cb29194b91c")
+run_baflogr_pipeline(sampleid = "f81693ba-09ee-4201-a389-0ceeda8a4636")
 # baflogrjob <- slurm_apply(f = run_baflogr_pipeline, params = rslurmdf[,, drop = F], jobname = "baflogr_run4", nodes = 463, cpus_per_node = 6, add_objects = ls(),
 #                           pkgs = rev(.packages()), libPaths = .libPaths(), slurm_options = list(), submit = T)
 
