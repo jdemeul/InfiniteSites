@@ -144,10 +144,14 @@ run_baflogr_pipeline <- function(sampleid) {
   
   
   print(paste0("Annotating with phasing and deriving violations for sample ", sampleid))
+  # debug(get_metrics)
+  # debug(get_performance_metrics)
+  # debug(call_parallel_violations)
   finhits <- call_parallel_violations(sampleid = sampleid,
                                       sampledir = sampledir,
                                       phasingdir = PHASINGDIR,
-                                      nboot = 100)
+                                      nboot = 100,
+                                      alpha = .01)
   
   
   # debug(annotate_gc_hits)

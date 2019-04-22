@@ -731,7 +731,7 @@ trim_XY_to_PAR <- function(segments_gr, bsgenome) {
 
 
 
-call_parallel_violations <- function(sampleid, sampledir, phasingdir, nboot = 1000) {
+call_parallel_violations <- function(sampleid, sampledir, phasingdir, nboot = 1000, alpha = .1) {
   
   # sampledir <- file.path(vafhitsdir, sampleid)
   
@@ -800,25 +800,29 @@ call_parallel_violations <- function(sampleid, sampledir, phasingdir, nboot = 10
   #summary stats
   # par_phasing_conf <- sum(vafhitsroc$is_confirmed)
   # browser()
-  perfmets_all <- get_metrics(vafhitsdf = vafhitsdf_clean, rocidxs = which(vafhitsdf_clean$is_phaseable), sampleid = sampleid, sampledir = sampledir, nboot = nboot, plotting = T)
-  perfmets_hetero <- get_metrics(vafhitsdf = vafhitsdf_clean, rocidxs = which(vafhitsdf_clean$is_phaseable & vafhitsdf_clean$minor_cn > 0), sampleid = sampleid, sampledir = sampledir, nboot = nboot)
-  perfmets_diploid <- get_metrics(vafhitsdf = vafhitsdf_clean, rocidxs = which(vafhitsdf_clean$is_phaseable & vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1), sampleid = sampleid, sampledir = sampledir, nboot = nboot)
-  perfmets_hetero <- setNames(object = perfmets_hetero, nm = paste(names(perfmets_all), sep = "_", "hetero"))
-  perfmets_diploid <- setNames(object = perfmets_diploid, nm = paste(names(perfmets_all), sep = "_", "dipl"))
+  perfmets_all <- get_metrics(vafhitsdf = vafhitsdf_clean, sampleid = sampleid, sampledir = sampledir, nboot = nboot, plotting = T, alpha = alpha)
+  # perfmets_hetero <- get_metrics(vafhitsdf = vafhitsdf_clean, rocidxs = which(vafhitsdf_clean$is_phaseable & vafhitsdf_clean$minor_cn > 0), sampleid = sampleid, sampledir = sampledir, nboot = nboot)
+  # perfmets_diploid <- get_metrics(vafhitsdf = vafhitsdf_clean, rocidxs = which(vafhitsdf_clean$is_phaseable & vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1), sampleid = sampleid, sampledir = sampledir, nboot = nboot)
+  # perfmets_hetero <- setNames(object = perfmets_hetero, nm = paste(names(perfmets_all), sep = "_", "hetero"))
+  # perfmets_diploid <- setNames(object = perfmets_diploid, nm = paste(names(perfmets_all), sep = "_", "dipl"))
   
-  finalhits <- vafhitsdf_clean[which(vafhitsdf_clean$pval <= perfmets_all[["fdrcutoff"]] | vafhitsdf_clean$is_confirmed), ]
+  finalhits <- vafhitsdf_clean[which(vafhitsdf_clean$pval <= perfmets_all[["cutoff"]] | vafhitsdf_clean$is_confirmed), ]
   estimtotal <- setNames(object = quantile(x = rbetabinom.ab(n = 1e4, size = nrow(vafhitsdf_clean), shape1 = sum(vafhitsdf_clean$is_confirmed)+.001, 
                                                              shape2 = sum(vafhitsdf_clean$is_phaseable & !vafhitsdf_clean$is_confirmed)+.001), probs = c(.025,.5,.975)),
                          nm = c("lower", "med", "upper"))
-  estimtotal_diploid <- setNames(object = quantile(x = rbetabinom.ab(n = 1e4, size = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1, na.rm = T), 
-                                                                     shape1 = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1 & vafhitsdf_clean$is_confirmed, na.rm = T)+.001, 
-                                                                     shape2 = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1 & vafhitsdf_clean$is_phaseable & !vafhitsdf_clean$is_confirmed, na.rm = T)+.001), probs = c(.025,.5,.975)),
-                                 nm = c("lower_diploid", "med_diploid", "upper_diploid"))
-  sumstats <- c(tot_testable = nrow(vafhitsdf_clean), tot_hetero = sum(vafhitsdf_clean$minor_cn > 0, na.rm = T),
-                tot_diploid = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1, na.rm = T), 
-                nparallel = nrow(finalhits), nparallel_diploid = sum(finalhits$major_cn == 1 & finalhits$minor_cn == 1, na.rm = T),
-                tot_phaseable = nrow(vafhitsdf_clean$is_phaseable), npar_phased = sum(vafhitsdf_clean$is_confirmed),
-                estimtotal, estimtotal_diploid, perfmets_all, perfmets_hetero, perfmets_diploid)
+  # estimtotal_diploid <- setNames(object = quantile(x = rbetabinom.ab(n = 1e4, size = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1, na.rm = T), 
+  #                                                                    shape1 = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1 & vafhitsdf_clean$is_confirmed, na.rm = T)+.001, 
+  #                                                                    shape2 = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1 & vafhitsdf_clean$is_phaseable & !vafhitsdf_clean$is_confirmed, na.rm = T)+.001), probs = c(.025,.5,.975)),
+  #                                nm = c("lower_diploid", "med_diploid", "upper_diploid"))
+  sumstats <- c(tot_testable = nrow(vafhitsdf_clean), tot_hetero = sum(vafhitsdf_clean$minor_cn > 0, na.rm = T), 
+                tot_diploid = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1, na.rm = T), nparallel = nrow(finalhits),
+                nparallel_hetero = sum(finalhits$minor_cn > 0, na.rm = T), nparallel_dipl = sum(finalhits$major_cn == 1 & finalhits$minor_cn == 1, na.rm = T),
+                tot_phaseable = nrow(vafhitsdf_clean$is_phaseable), npar_phased = sum(vafhitsdf_clean$is_confirmed), estimtotal, perfmets_all)
+  # sumstats <- c(tot_testable = nrow(vafhitsdf_clean), tot_hetero = sum(vafhitsdf_clean$minor_cn > 0, na.rm = T),
+  #               tot_diploid = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1, na.rm = T), 
+  #               nparallel = nrow(finalhits), nparallel_diploid = sum(finalhits$major_cn == 1 & finalhits$minor_cn == 1, na.rm = T),
+  #               tot_phaseable = nrow(vafhitsdf_clean$is_phaseable), npar_phased = sum(vafhitsdf_clean$is_confirmed),
+  #               estimtotal, estimtotal_diploid, perfmets_all, perfmets_hetero, perfmets_diploid)
   
   # writing output
   write.table(x = finalhits, file = file.path(sampledir, paste0(sampleid, "_snv_mnv_infSites_finalhits.txt")), sep = "\t", row.names = F, col.names = T, quote = F)
@@ -830,58 +834,53 @@ call_parallel_violations <- function(sampleid, sampledir, phasingdir, nboot = 10
 }
 
 
-get_metrics <- function(vafhitsdf, rocidxs, sampleid, sampledir, nboot, plotting = F) {
+get_metrics <- function(vafhitsdf_clean, sampleid, sampledir, nboot, alpha = .1, plotting = F) {
   
-  if (sum(vafhitsdf[rocidxs, "is_confirmed"]) > 0) {
+  if (nrow(vafhitsdf_clean) > 0 ){
+    # fdrcutoff <- sum(p.adjust(vafhitsdf_clean$pval, method = "fdr") <= alpha , na.rm = T)*alpha/sum(!is.na(vafhitsdf_clean$pval))
+    # phaseableidxs <- which(vafhitsdf_clean$is_phaseable)
+    
+    # if there are phasing-confirmed parallel hits
     if (plotting) {
-      invisible(get_performance_metrics(df = vafhitsdf[rocidxs, ], plotting = plotting, sampleid = sampleid, sampledir = sampledir))
+      invisible(get_performance_metrics(df = vafhitsdf_clean, alpha = alpha, plotting = plotting, sampleid = sampleid, sampledir = sampledir))
     }
-    bootout <- boot::boot(data = vafhitsdf[rocidxs, ], statistic = function(x, i) {get_performance_metrics(df = x[i,])}, R = nboot)
+    bootout <- boot::boot(data = vafhitsdf_clean, statistic = function(x, i) {get_performance_metrics(df = x[i,], alpha = alpha, sampleid = sampleid, sampledir = sampledir, plotting = F)}, R = nboot)
     perfmets <- setNames(object = colMeans(bootout$t, na.rm = T), names(bootout$t0))
-  } else if (nrow(vafhitsdf) > 0 ){
-    perfmets <- c(fdrcutoff = sum(p.adjust(vafhitsdf$pval, method = "fdr") <= .1 , na.rm = T)*.1/sum(!is.na(vafhitsdf$pval)), fdrprec = NA, fdrrec = NA, Fone = NA, Fcutoff = NA, Fprec = NA, Frec = NA)
+    perfmets[["cutoff"]] <- 10^-perfmets[["cutoff"]]
   } else {
-    perfmets <- c(fdrcutoff = NA, fdrprec = NA, fdrrec = NA, Fone = NA, Fcutoff = NA, Fprec = NA, Frec = NA)
+    perfmets <- c(cutoff = NA, prec = NA, rec = NA)
   }
+  
   return(perfmets)
 }
 
 
-
-get_performance_metrics <- function(df, plotting = F, sampleid = sampleid, sampledir = OUTDIR) {
+get_performance_metrics <- function(df, alpha, plotting = F, sampleid, sampledir) {
   
-  if (sum(df$is_confirmed) == 0) {
-    outv <- setNames(object = numeric(length = 7L), nm = c("fdrcutoff", "fdrprec", "fdrrec", "Fone", "Fcutoff", "Fprec", "Frec"))
-    # print(outv)
-    return(outv)
+  cutoff <- -log10(sum(p.adjust(df$pval, method = "fdr") <= alpha , na.rm = T)*alpha/sum(!is.na(df$pval)))
+  phaseableidxs <- which(df$is_phaseable)
+  
+  if (sum(df[phaseableidxs, "is_confirmed"]) == 0) {
+    optimperf <- c(cutoff = cutoff, prec = NA, rec = NA)
+    return(optimperf)
   }
   
-  infsitespred <- prediction(predictions = -log10(df$pval), labels = df$is_confirmed)
+  infsitespred <- prediction(predictions = -log10(df[phaseableidxs, "pval"]), labels = df[phaseableidxs, "is_confirmed"])
   infsitesperf <- performance(prediction.obj = infsitespred, measure = "prec", x.measure = "rec")
   
-  fdridx <- tail(which(infsitesperf@y.values[[1]] >= .9), n = 1)
+  fdridx <- tail(which(infsitesperf@alpha.values[[1]] >= cutoff), n = 1)
   if (length(fdridx) == 0) {
-    fdridx <- which.max(infsitesperf@y.values[[1]])
+    fdridx <- which.max(infsitesperf@alpha.values[[1]])
   }
-  fdrcutoff <- 10^-infsitesperf@alpha.values[[1]][fdridx]
-  fdrprec <- infsitesperf@y.values[[1]][fdridx]
-  fdrrec <- infsitesperf@x.values[[1]][fdridx]
+  prec <- infsitesperf@y.values[[1]][fdridx]
+  rec <- infsitesperf@x.values[[1]][fdridx]
   
-  infsitesperfF <- performance(prediction.obj = infsitespred, measure = "f")
-  Fidx <- which.max(infsitesperfF@y.values[[1]])
-  Fone <- infsitesperfF@y.values[[1]][Fidx]
-  Fcutoff <- 10^-infsitesperfF@x.values[[1]][Fidx]
-  Fprec <- infsitesperf@y.values[[1]][Fidx]
-  Frec <- infsitesperf@x.values[[1]][Fidx]
-  
-  optimperf <- c(fdrcutoff = fdrcutoff, fdrprec = fdrprec, fdrrec = fdrrec, Fone = Fone, Fcutoff = Fcutoff, Fprec = Fprec, Frec = Frec)
+  optimperf <- c(cutoff = cutoff, prec = prec, rec = rec)
   
   if (plotting) {
-    p6 <- ggplot(data = as.data.frame(t(optimperf)), mapping = aes(y = Fprec, x = Frec))
-    p6 <- p6 + geom_hline(yintercept = .9, color = "blue", linetype = "dashed") + geom_vline(xintercept = fdrrec, color = "blue", linetype = "dashed")
-    p6 <- p6 + geom_hline(yintercept = Fprec, color = "red", linetype = "dashed") + geom_vline(xintercept = Frec, color = "red", linetype = "dashed")
-    p6 <- p6 + geom_label(mapping = aes(label = paste0("-log10(pval) = ", round(-log10(Fcutoff), digits = 2))), nudge_x = .05, hjust = "left") + geom_point(color = "red")
-    p6 <- p6 + geom_label(mapping = aes(y = fdrprec, x = fdrrec, label = paste0("-log10(pval) = ", round(-log10(fdrcutoff), digits = 2))), nudge_x = .05, hjust = "left") + geom_point(mapping = aes(y = fdrprec, x = fdrrec), color = "blue")
+    p6 <- ggplot(data = as.data.frame(t(optimperf)), mapping = aes(y = prec, x = rec))
+    p6 <- p6 + geom_hline(yintercept = prec, color = "red", linetype = "dashed") + geom_vline(xintercept = rec, color = "red", linetype = "dashed")
+    p6 <- p6 + geom_label(mapping = aes(label = paste0("-log10(pval) = ", round(-log10(cutoff), digits = 2))), hjust = "inward") + geom_point(color = "red")
     p6 <- p6 + geom_line(data = data.frame(precision = infsitesperf@y.values[[1]], recall = infsitesperf@x.values[[1]]), mapping = aes(x = recall, y = precision))
     p6 <- p6 + theme_minimal() + coord_equal(xlim = c(0,1), ylim = c(0,1)) + labs(y = "Precision", x = "Recall")
     # p6 <- p6 + labs(title = paste0("sample ", sampleid, " - ", "\ntotal testable: ", nrow(vafhitsdf), " - parallel violations: ", nrow(finalhits), " / total phaseable: ", nrow(vafhitsroc), " - violation confirmed: ", sum(vafhitsroc$is_confirmed)))
@@ -892,3 +891,50 @@ get_performance_metrics <- function(df, plotting = F, sampleid = sampleid, sampl
   return(optimperf)
 }
 
+
+
+
+# get_performance_metrics <- function(df, plotting = F, sampleid = sampleid, sampledir = OUTDIR) {
+#   
+#   if (sum(df$is_confirmed) == 0) {
+#     outv <- setNames(object = numeric(length = 7L), nm = c("fdrcutoff", "fdrprec", "fdrrec", "Fone", "Fcutoff", "Fprec", "Frec"))
+#     # print(outv)
+#     return(outv)
+#   }
+#   
+#   infsitespred <- prediction(predictions = -log10(df$pval), labels = df$is_confirmed)
+#   infsitesperf <- performance(prediction.obj = infsitespred, measure = "prec", x.measure = "rec")
+#   
+#   fdridx <- tail(which(infsitesperf@y.values[[1]] >= .9), n = 1)
+#   if (length(fdridx) == 0) {
+#     fdridx <- which.max(infsitesperf@y.values[[1]])
+#   }
+#   fdrcutoff <- 10^-infsitesperf@alpha.values[[1]][fdridx]
+#   fdrprec <- infsitesperf@y.values[[1]][fdridx]
+#   fdrrec <- infsitesperf@x.values[[1]][fdridx]
+#   
+#   infsitesperfF <- performance(prediction.obj = infsitespred, measure = "f")
+#   Fidx <- which.max(infsitesperfF@y.values[[1]])
+#   Fone <- infsitesperfF@y.values[[1]][Fidx]
+#   Fcutoff <- 10^-infsitesperfF@x.values[[1]][Fidx]
+#   Fprec <- infsitesperf@y.values[[1]][Fidx]
+#   Frec <- infsitesperf@x.values[[1]][Fidx]
+#   
+#   optimperf <- c(fdrcutoff = fdrcutoff, fdrprec = fdrprec, fdrrec = fdrrec, Fone = Fone, Fcutoff = Fcutoff, Fprec = Fprec, Frec = Frec)
+#   
+#   if (plotting) {
+#     p6 <- ggplot(data = as.data.frame(t(optimperf)), mapping = aes(y = Fprec, x = Frec))
+#     p6 <- p6 + geom_hline(yintercept = .9, color = "blue", linetype = "dashed") + geom_vline(xintercept = fdrrec, color = "blue", linetype = "dashed")
+#     p6 <- p6 + geom_hline(yintercept = Fprec, color = "red", linetype = "dashed") + geom_vline(xintercept = Frec, color = "red", linetype = "dashed")
+#     p6 <- p6 + geom_label(mapping = aes(label = paste0("-log10(pval) = ", round(-log10(Fcutoff), digits = 2))), nudge_x = .05, hjust = "left") + geom_point(color = "red")
+#     p6 <- p6 + geom_label(mapping = aes(y = fdrprec, x = fdrrec, label = paste0("-log10(pval) = ", round(-log10(fdrcutoff), digits = 2))), nudge_x = .05, hjust = "left") + geom_point(mapping = aes(y = fdrprec, x = fdrrec), color = "blue")
+#     p6 <- p6 + geom_line(data = data.frame(precision = infsitesperf@y.values[[1]], recall = infsitesperf@x.values[[1]]), mapping = aes(x = recall, y = precision))
+#     p6 <- p6 + theme_minimal() + coord_equal(xlim = c(0,1), ylim = c(0,1)) + labs(y = "Precision", x = "Recall")
+#     # p6 <- p6 + labs(title = paste0("sample ", sampleid, " - ", "\ntotal testable: ", nrow(vafhitsdf), " - parallel violations: ", nrow(finalhits), " / total phaseable: ", nrow(vafhitsroc), " - violation confirmed: ", sum(vafhitsroc$is_confirmed)))
+#     
+#     ggsave(filename = file.path(sampledir, paste0(sampleid, "_PrecRec.png")), plot = p6, width = 10, height = 10, units = "cm")
+#   }
+#   # print(optimperf)
+#   return(optimperf)
+# }
+# 
