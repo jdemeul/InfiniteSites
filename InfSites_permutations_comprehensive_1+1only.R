@@ -12,6 +12,7 @@ library(BSgenome.Hsapiens.1000genomes.hs37d5)
 library(VariantAnnotation)
 library(parallel)
 library(rslurm)
+library(VGAM)
 # library(ggplot2)
 
 # source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/genecon/mutation_spectrum_analysis_functions_20181206.R")
@@ -19,11 +20,12 @@ source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/ge
 
 SNVMNVINDELDIR <- "/srv/shared/vanloo/ICGC_snv_mnv/final_consensus_12oct_passonly/"
 RELEASETABLEFILE <- "/srv/shared/vanloo/ICGC_annotations/release_may2016.v1.4.tsv"
+SUMTABLE_WHOLE <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/results/summary_table_combined_annotations_v2_JD.txt"
 OUTDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isabreakdown_1plus1_only/"
 CNDIR <- "/srv/shared/vanloo/ICGC_consensus_copynumber/20170119_release/"
 
-NCORES <- 11
-NSIMS <- 1000
+NCORES <- 12
+NSIMS <- 100
 
 
 gammaShRaFromModeSD = function( mode , sd ) {
@@ -101,15 +103,15 @@ classify_violations <- function(sampledsnvs) {
 
 
 
-simulate_snvs_chr <- function(chridx, nmutsim_chr, callablegenome, consecutivesegments, trinucs, mutspectrum_chr_norm, sizefactor = 25) {
+simulate_snvs_chr <- function(chridx, nmutsim_chr, consecutivesegments, trinucs, mutspectrum_chr_norm, sizefactor = 25) {
   
   # print(paste0("chr", chridx))
   
   # get probabilities for types and acceptance rate for mutations
-  probspertrinuc <- c(by(data = mutspectrum_chr_norm[chridx,], INDICES = trinucs$trinucleotides, FUN = sum))
+  probspertrinuc <- c(by(data = unlist(mutspectrum_chr_norm[chridx,]), INDICES = trinucs$trinucleotides, FUN = sum))
   acceptpertrinuc <- probspertrinuc/max(probspertrinuc)
   
-  probsmuttype <- split(x = setNames(object = mutspectrum_chr_norm[chridx,], nm = substr(x = colnames(mutspectrum_chr_norm), 5,5)), f = trinucs$trinucleotides)
+  probsmuttype <- split(x = setNames(object = unlist(mutspectrum_chr_norm[chridx,]), nm = substr(x = colnames(mutspectrum_chr_norm), 5,5)), f = trinucs$trinucleotides)
   probsmuttype <- lapply(probsmuttype, FUN = function(x) x/sum(x))
   
   
@@ -122,7 +124,12 @@ simulate_snvs_chr <- function(chridx, nmutsim_chr, callablegenome, consecutivese
     sampleranges <- shift(x = sampleranges, shift = mcols(consecutivesegments[[chridx]])[nearest(x = sampleranges, subject = consecutivesegments[[chridx]]), "offset"] - 1)
     
     # sampleranges <- GRanges(seqnames = chridx, ranges = IRanges(start = sample(x = 1:seqlengths(BSgenome.Hsapiens.1000genomes.hs37d5)[[chridx]], size = sizefactor*nmutsim_chr[[chridx]], replace = T), width = 3), seqinfo = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
-    sampleranges <- subsetByOverlaps(x = sampleranges, ranges = callablegenome)
+    # sampleranges <- subsetByOverlaps(x = sampleranges, ranges = callablegenome)
+    
+    # if (length(sampleranges) == 0) {
+    #   print("Tricky region, sampling again")
+    #   next
+    # }
     
     # keep track of "time"
     sampleranges$timestep <- 1:length(sampleranges)
@@ -206,7 +213,7 @@ simulate_snvs_chr <- function(chridx, nmutsim_chr, callablegenome, consecutivese
 
 
 
-simulate_snvs_sample_single_iteration <- function(mutspectrum, trinucs, callablegenome, ncores, callableseqtrinucsbychrom, cn) {
+simulate_snvs_sample_single_iteration <- function(mutspectrum, trinucs, callablegenome, ncores, callableseqtrinucsbychrom) {
   
   #### sampling repeats start here
   # resample total number of muts again
@@ -226,9 +233,9 @@ simulate_snvs_sample_single_iteration <- function(mutspectrum, trinucs, callable
                               obs = mutspectrum, prior = muttypeprior))
   colnames(mutspectrum_chr) <- colnames(mutspectrum)
   
-  mutspectrum_chr_norm <- mutspectrum_chr/callableseqtrinucsbychrom[rownames(mutspectrum_chr), trinucs$trinucleotides]
+  mutspectrum_chr_norm <- mutspectrum_chr/callableseqtrinucsbychrom[rownames(mutspectrum_chr), trinucs$trinucleotides, drop = F]
   mutspectrum_chr_norm <- mutspectrum_chr_norm/rowSums(mutspectrum_chr_norm)
-  
+  colnames(mutspectrum_chr_norm) <- trinucs$trinucleotides_mutations
   
   # # pre-generate samplevectors
   consecutivesegments <- lapply(X = names(nmutsim_chr), FUN = function(chridx, cn) {
@@ -236,13 +243,13 @@ simulate_snvs_sample_single_iteration <- function(mutspectrum, trinucs, callable
     consecutivesegments <- GRanges(seqnames = chridx, ranges = IRanges(start = cumsum(c(1, width(cn_chr)[-length(cn_chr)])), width = width(cn_chr)), seqinfo = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
     mcols(consecutivesegments)$offset <- start(cn_chr) - start(consecutivesegments)
   return(consecutivesegments)
-  }, cn = cn)
+  }, cn = callablegenome)
   
   names(consecutivesegments) <- names(nmutsim_chr)
 
   
   #### per chromosome
-  isaviolations_single_iteration <- mclapply(X = names(nmutsim_chr), FUN = simulate_snvs_chr, nmutsim_chr = nmutsim_chr, trinucs = trinucs, callablegenome = callablegenome, mutspectrum_chr_norm = mutspectrum_chr_norm, consecutivesegments = consecutivesegments, mc.preschedule = F, mc.cores = ncores)
+  isaviolations_single_iteration <- mclapply(X = names(nmutsim_chr), FUN = simulate_snvs_chr, nmutsim_chr = nmutsim_chr, trinucs = trinucs, mutspectrum_chr_norm = mutspectrum_chr_norm, consecutivesegments = consecutivesegments, mc.preschedule = F, mc.cores = ncores)
   
   # combine and return
   isaviolations_single_iteration <- Reduce('+', lapply(isaviolations_single_iteration, FUN = function(x) x[, c("freqbf", "freqal")]))
@@ -287,7 +294,7 @@ generate_isa_breakdown_file <- function(sampleid, outdir, snvindeldir, cndir, ns
   callableseq <- getSeq(x = BSgenome.Hsapiens.1000genomes.hs37d5, callablegenomecn)
   callableseqtrinucsbychrom <- by(data = trinucleotideFrequency(callableseq), INDICES = seqnames(callablegenomecn), FUN = colSums)
   # callableseqtrinucs <- Reduce(f = '+', x = callableseqtrinucsbychrom)
-  callableseqtrinucsbychrom <- do.call(rbind, lapply(callableseqtrinucsbychrom, function(x) x/sum(x)))
+  callableseqtrinucsbychrom <- data.frame(do.call(rbind, lapply(callableseqtrinucsbychrom, function(x) x/sum(x))))
   
   callableseqtrinucsbychrom <- callableseqtrinucsbychrom[, unique(trinucs$trinucleotides)] + 
     callableseqtrinucsbychrom[, as.character(reverseComplement(DNAStringSet(unique(trinucs$trinucleotides))))]
@@ -296,7 +303,7 @@ generate_isa_breakdown_file <- function(sampleid, outdir, snvindeldir, cndir, ns
   statsdf <- c(total_genome = sum(as.numeric(width(callablegenomecn))), frac_call_genome = sum(as.numeric(width(callablegenomecn))) / sum(as.numeric(width(callablegenome))), used_snvs = length(snvs), frac_snvs = length(snvs)/totalsnvs)
   write.table(x = statsdf, file = file.path(outdir, paste0(sampleid, "_generalstats.txt")), quote = F, sep = "\t", row.names = T, col.names = F)
   
-  isaviolations <- mclapply(X = 1:nsims, FUN = function(x) {print(paste0("simulation ", x)); simulate_snvs_sample_single_iteration(mutspectrum = mutspectrum, trinucs = trinucs, callablegenome = callablegenome, callableseqtrinucsbychrom = callableseqtrinucsbychrom, cn = cn, ncores = 1)}, mc.allow.recursive = F, mc.preschedule = T, mc.cores = ncores)
+  isaviolations <- mclapply(X = 1:nsims, FUN = function(x) {print(paste0("simulation ", x)); simulate_snvs_sample_single_iteration(mutspectrum = mutspectrum, trinucs = trinucs, callablegenome = callablegenomecn, callableseqtrinucsbychrom = callableseqtrinucsbychrom, ncores = 1)}, mc.allow.recursive = F, mc.preschedule = T, mc.cores = ncores)
   # isaviolations <- lapply(X = 1:nsims, FUN = function(x) {print(paste0("simulation ", x)); simulate_snvs_sample_single_iteration(mutspectrum = mutspectrum, trinucs = trinucs, callablegenome = callablegenome, callableseqtrinucsbychrom = callableseqtrinucsbychrom, ncores = 1)})
   # browser()
   bfcounts <- t(apply(X = do.call(cbind, lapply(isaviolations, function(x) x$freqbf)), MARGIN = 1, FUN = quantile, probs = c(.025, .5, .975), simplify = T))
@@ -336,7 +343,7 @@ callablegenome <- sort(callablegenome[mcols(callablegenome)$score == 1])
 
 trinucs <- generate_bases_types_trinuc()
 
-
+# rslurmdf <- read.delim(SUMTABLE_WHOLE, as.is = T)
 rslurmdf <- read_pcawg_release_table(release_table_file = RELEASETABLEFILE)[, "tumor_wgs_aliquot_id" , drop = F]
 colnames(rslurmdf) <- "sampleid"
 
@@ -352,15 +359,16 @@ colnames(rslurmdf) <- "sampleid"
 # sampleid <- "fc876f5c-8339-bc9c-e040-11ac0d485160"
 # sampleid <- "7cae6c0b-36fe-411b-bbba-093a4c846d84"
 # sampleid <- "0332b017-17d5-4083-8fc4-9d6f8fdbbbde"
-# sampleid <- "322f0b01-2118-4dbe-aba1-3875a54ee71b"
+# sampleid <- "f82d213f-bc06-5b51-e040-11ac0c48687e"
 
-# debug(simulate_snvs_chr)
+
 # debug(generate_isa_breakdown_file)
-# debug(simulate_snvs_chr)
+# undebug(simulate_snvs_chr)
 # debug(simulate_snvs_sample_single_iteration)
 
-estisaviolations <- generate_isa_breakdown_file(sampleid = rslurmdf$sampleid[1], outdir = OUTDIR, snvindeldir = SNVMNVINDELDIR, nsims = NSIMS,
-                            ncores = NCORES, callablegenome = callablegenome, trinucs = trinucs, cndir = CNDIR)
+# set.seed(seed = 13454)
+# estisaviolations <- generate_isa_breakdown_file(sampleid = sampleid, outdir = OUTDIR, snvindeldir = SNVMNVINDELDIR, nsims = NSIMS,
+#                             ncores = NCORES, callablegenome = callablegenome, trinucs = trinucs, cndir = CNDIR)
 
 #### slurm wrapping
 generate_isa_breakdown_file_slurmwrap <- function(sampleid) {
@@ -373,8 +381,8 @@ generate_isa_breakdown_file_slurmwrap <- function(sampleid) {
 # generate_isa_breakdown_file_slurmwrap(sampleid = sampleid)
 
 # 
-isajob <- slurm_apply(f = generate_isa_breakdown_file_slurmwrap, params = rslurmdf[,,drop=F], jobname = "isajob4", nodes = 40, cpus_per_node = 1, add_objects = ls(),
-                          pkgs = rev(.packages()), libPaths = .libPaths(), submit = T)
+isajob <- slurm_apply(f = generate_isa_breakdown_file_slurmwrap, params = rslurmdf[,,drop=F], jobname = "isajob4", nodes = 470, cpus_per_node = 1, add_objects = ls(),
+                          pkgs = rev(.packages()), libPaths = .libPaths(), submit = T, slurm_options = list(exclude="fat-worker00[1-2]"))
 
 
 

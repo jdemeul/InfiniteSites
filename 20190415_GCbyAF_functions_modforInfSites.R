@@ -740,40 +740,51 @@ call_parallel_violations <- function(sampleid, sampledir, phasingdir, nboot = 10
   phasinghitsfile <- file.path(phasingdir, sampleid, paste0(sampleid, "_tumour_snv-snp_phased.txt"))
   testedbaffile <- file.path(sampledir, paste0(sampleid, "_phasedbaf_tested.txt"))
   
-  if (any(!file.exists(vafhitsfile, phasinghitsfile, testedbaffile))) return(NULL)
+  if (any(!file.exists(vafhitsfile, testedbaffile))) return(NULL)
   
   vafhitsdf <- read.delim(file = vafhitsfile, as.is = T)
-  phasinghits <- read.delim(file = phasinghitsfile, as.is = T)
   testedbaf <- read_tsv(file = testedbaffile, col_types = "ciiiiin")
   
-  # SNV-SNP phasing only directly informative
-  phasinghits <- phasinghits[which(phasinghits$type1 != phasinghits$type2), ]
-  
-  # make sure there is a decent amount of pair coverage necessary to see anything (i.e. 2 reads for each SNP allele, 4 reads from the somatic variant allele, fair since we won't pick up anything subclonal anyhow)
-  coveredphasinghits <- which(ifelse(phasinghits$type1 == "SNP",
-                                     phasinghits$Num_ref_ref + phasinghits$Num_ref_alt >= 2 & phasinghits$Num_alt_ref + phasinghits$Num_alt_alt >= 2 & phasinghits$Num_ref_alt + phasinghits$Num_alt_alt >= 4 ,
-                                     phasinghits$Num_ref_ref + phasinghits$Num_alt_ref >= 2 & phasinghits$Num_alt_alt + phasinghits$Num_ref_alt >= 2 & phasinghits$Num_alt_ref + phasinghits$Num_alt_alt >= 4))
-  phasinghits <- phasinghits[coveredphasinghits, ]
-  
-  # create snv/snp indices for quick overlaps
-  phasinghits$snvidx <- ifelse(phasinghits$type1 == "SNV", paste0(phasinghits$chr, "_", phasinghits$pos1),  paste0(phasinghits$chr, "_", phasinghits$pos2))
-  phasinghits$snpidx <- ifelse(phasinghits$type1 == "SNV", paste0(phasinghits$chr, "_", phasinghits$pos2),  paste0(phasinghits$chr, "_", phasinghits$pos1))
   vafhitsidxs <- paste0(vafhitsdf$chr, "_", vafhitsdf$start)
   testedbaf$snpidx <- paste0(testedbaf$seqnames, "_", testedbaf$start)
   
-  # subset to the ones which have been evaluated for ISA violations
-  phasinghitssub <- phasinghits[which(phasinghits$snvidx %in% vafhitsidxs), ]
-  # testedbaf <- testedbaf[which(testedbaf$snpidx %in% phasinghitssub$snpidx), ]
-  # and call violations from phasing data
-  phasinghitssub$totalpwcov <- rowSums(phasinghitssub[, c("Num_ref_ref", "Num_ref_alt", "Num_alt_alt", "Num_alt_ref")])
-  phasinghitssub$isaviol <- ifelse(phasinghitssub$type1 == "SNP",
-                                   phasinghitssub$Num_ref_alt > 1 & phasinghitssub$Num_alt_alt > 1 & phasinghitssub$Num_ref_alt/phasinghitssub$totalpwcov > .1 & phasinghitssub$Num_alt_alt/phasinghitssub$totalpwcov > .1,
-                                   phasinghitssub$Num_alt_ref > 1 & phasinghitssub$Num_alt_alt > 1 & phasinghitssub$Num_alt_ref/phasinghitssub$totalpwcov > .1 & phasinghitssub$Num_alt_alt/phasinghitssub$totalpwcov > .1)
-  phasinghitssub$phasedsnpval <- testedbaf$pvalphased[match(x = phasinghitssub$snpidx, table = testedbaf$snpidx)]
+  
+  if (file.exists(phasinghitsfile)) {
+    phasinghits <- read.delim(file = phasinghitsfile, as.is = T)
+    # SNV-SNP phasing only directly informative
+    phasinghits <- phasinghits[which(phasinghits$type1 != phasinghits$type2), ]
+    
+    # make sure there is a decent amount of pair coverage necessary to see anything (i.e. 2 reads for each SNP allele, 4 reads from the somatic variant allele, fair since we won't pick up anything subclonal anyhow)
+    coveredphasinghits <- which(ifelse(phasinghits$type1 == "SNP",
+                                       phasinghits$Num_ref_ref + phasinghits$Num_ref_alt >= 2 & phasinghits$Num_alt_ref + phasinghits$Num_alt_alt >= 2 & phasinghits$Num_ref_alt + phasinghits$Num_alt_alt >= 4 ,
+                                       phasinghits$Num_ref_ref + phasinghits$Num_alt_ref >= 2 & phasinghits$Num_alt_alt + phasinghits$Num_ref_alt >= 2 & phasinghits$Num_alt_ref + phasinghits$Num_alt_alt >= 4))
+    phasinghits <- phasinghits[coveredphasinghits, ]
+    
+    # create snv/snp indices for quick overlaps
+    phasinghits$snvidx <- ifelse(phasinghits$type1 == "SNV", paste0(phasinghits$chr, "_", phasinghits$pos1),  paste0(phasinghits$chr, "_", phasinghits$pos2))
+    phasinghits$snpidx <- ifelse(phasinghits$type1 == "SNV", paste0(phasinghits$chr, "_", phasinghits$pos2),  paste0(phasinghits$chr, "_", phasinghits$pos1))
+    
+    # subset to the ones which have been evaluated for ISA violations
+    phasinghitssub <- phasinghits[which(phasinghits$snvidx %in% vafhitsidxs), ]
+    # testedbaf <- testedbaf[which(testedbaf$snpidx %in% phasinghitssub$snpidx), ]
+    # and call violations from phasing data
+    phasinghitssub$totalpwcov <- rowSums(phasinghitssub[, c("Num_ref_ref", "Num_ref_alt", "Num_alt_alt", "Num_alt_ref")])
+    phasinghitssub$isaviol <- ifelse(phasinghitssub$type1 == "SNP",
+                                     phasinghitssub$Num_ref_alt > 1 & phasinghitssub$Num_alt_alt > 1 & phasinghitssub$Num_ref_alt/phasinghitssub$totalpwcov > .1 & phasinghitssub$Num_alt_alt/phasinghitssub$totalpwcov > .1,
+                                     phasinghitssub$Num_alt_ref > 1 & phasinghitssub$Num_alt_alt > 1 & phasinghitssub$Num_alt_ref/phasinghitssub$totalpwcov > .1 & phasinghitssub$Num_alt_alt/phasinghitssub$totalpwcov > .1)
+    phasinghitssub$phasedsnpval <- testedbaf$pvalphased[match(x = phasinghitssub$snpidx, table = testedbaf$snpidx)]
+
+  } else {
+    phasinghitssub <- data.frame(chr = character(), pos1 = integer(), ref1 = character(), alt1 = character(), type1 = character(),
+                                 pos2 = integer(), ref2 = character(), alt2 = character(), type2 = character(),
+                                 Num_ref_ref = integer(), Num_alt_alt = integer(), Num_alt_ref = integer(), Num_ref_alt = integer(),
+                                 phasing = character(), snvidx = character(), snpidx = character(), totalpwcov = integer(), isaviol = logical(), phasedsnpval = numeric())
+  }
   
   # assign calls
   vafhitsdf$is_phaseable <- vafhitsidxs %in% phasinghitssub$snvidx
   vafhitsdf$is_confirmed <- vafhitsidxs %in% names(which(c(by(data = phasinghitssub, INDICES = phasinghitssub$snvidx, FUN = function(x) any(x$isaviol & x$phasedsnpval > 1e-3)))))
+  
   # vafhitsdf$phasedsnpval <- NA
   # vafhitsdf[vafhitsdf$is_phaseable, "phasedsnpval"] <- c(by(data = phasinghitssub$phasedsnpval, INDICES = phasinghitssub$snvidx, FUN = min))[vafhitsidxs[vafhitsdf$is_phaseable]]
   # vafhitsdf$phasedsnpval <- c(by(data = phasinghitssub$phasedsnpval, INDICES = phasinghitssub$snvidx, FUN = min))[vafhitsidxs]
@@ -810,14 +821,14 @@ call_parallel_violations <- function(sampleid, sampledir, phasingdir, nboot = 10
   estimtotal <- setNames(object = quantile(x = rbetabinom.ab(n = 1e4, size = nrow(vafhitsdf_clean), shape1 = sum(vafhitsdf_clean$is_confirmed)+.001, 
                                                              shape2 = sum(vafhitsdf_clean$is_phaseable & !vafhitsdf_clean$is_confirmed)+.001), probs = c(.025,.5,.975)),
                          nm = c("lower", "med", "upper"))
-  # estimtotal_diploid <- setNames(object = quantile(x = rbetabinom.ab(n = 1e4, size = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1, na.rm = T), 
-  #                                                                    shape1 = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1 & vafhitsdf_clean$is_confirmed, na.rm = T)+.001, 
-  #                                                                    shape2 = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1 & vafhitsdf_clean$is_phaseable & !vafhitsdf_clean$is_confirmed, na.rm = T)+.001), probs = c(.025,.5,.975)),
-  #                                nm = c("lower_diploid", "med_diploid", "upper_diploid"))
+  estimtotal_diploid <- setNames(object = quantile(x = rbetabinom.ab(n = 1e4, size = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1, na.rm = T),
+                                                                     shape1 = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1 & vafhitsdf_clean$is_confirmed, na.rm = T)+.001,
+                                                                     shape2 = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1 & vafhitsdf_clean$is_phaseable & !vafhitsdf_clean$is_confirmed, na.rm = T)+.001), probs = c(.025,.5,.975)),
+                                 nm = c("lower_diploid", "med_diploid", "upper_diploid"))
   sumstats <- c(tot_testable = nrow(vafhitsdf_clean), tot_hetero = sum(vafhitsdf_clean$minor_cn > 0, na.rm = T), 
                 tot_diploid = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1, na.rm = T), nparallel = nrow(finalhits),
                 nparallel_hetero = sum(finalhits$minor_cn > 0, na.rm = T), nparallel_dipl = sum(finalhits$major_cn == 1 & finalhits$minor_cn == 1, na.rm = T),
-                tot_phaseable = nrow(vafhitsdf_clean$is_phaseable), npar_phased = sum(vafhitsdf_clean$is_confirmed), estimtotal, perfmets_all)
+                tot_phaseable = nrow(vafhitsdf_clean$is_phaseable), npar_phased = sum(vafhitsdf_clean$is_confirmed), estimtotal, estimtotal_diploid, perfmets_all)
   # sumstats <- c(tot_testable = nrow(vafhitsdf_clean), tot_hetero = sum(vafhitsdf_clean$minor_cn > 0, na.rm = T),
   #               tot_diploid = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1, na.rm = T), 
   #               nparallel = nrow(finalhits), nparallel_diploid = sum(finalhits$major_cn == 1 & finalhits$minor_cn == 1, na.rm = T),

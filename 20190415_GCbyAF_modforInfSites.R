@@ -65,7 +65,7 @@ immune_loci <- GRanges(seqnames = c(14, 7, 7, 14, 2, 22, 6), ranges = IRanges(st
 # start with sample ID (i.e. tumour wgs aliquot ID)
 # sampleid <- releasetable[1, "tumor_wgs_aliquot_id"]
 # sampleid <- "deb9fbb6-656b-41ce-8299-554efc2379bd"
-# sampleid <- "b2ec0fd0-fbcf-4abc-ad80-4ae444e30b55"
+sampleid <- "1ac15380-04a2-42dd-8ade-28556a570e80"
 # sampleid <- "04aa6b77-8074-480c-872e-a1a47afa5314"
 ####################
 
@@ -183,7 +183,7 @@ colnames(rslurmdf) <- "sampleid"
 # debug(test_clean_sites)
 # debug(annotate_gc_hits)
 # run_baflogr_pipeline(sampleid = rslurmdf[4,])
-run_baflogr_pipeline(sampleid = "f81693ba-09ee-4201-a389-0ceeda8a4636")
+run_baflogr_pipeline(sampleid = sampleid)
 # baflogrjob <- slurm_apply(f = run_baflogr_pipeline, params = rslurmdf[,, drop = F], jobname = "baflogr_run4", nodes = 463, cpus_per_node = 6, add_objects = ls(),
 #                           pkgs = rev(.packages()), libPaths = .libPaths(), slurm_options = list(), submit = T)
 
