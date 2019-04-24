@@ -213,7 +213,7 @@ simulate_snvs_chr <- function(chridx, nmutsim_chr, consecutivesegments, trinucs,
 
 
 
-simulate_snvs_sample_single_iteration <- function(mutspectrum, trinucs, callablegenome, ncores, callableseqtrinucsbychrom) {
+simulate_snvs_sample_single_iteration <- function(mutspectrum, trinucs, consecutivesegments, ncores, callableseqtrinucsbychrom) {
   
   #### sampling repeats start here
   # resample total number of muts again
@@ -236,18 +236,7 @@ simulate_snvs_sample_single_iteration <- function(mutspectrum, trinucs, callable
   mutspectrum_chr_norm <- mutspectrum_chr/callableseqtrinucsbychrom[rownames(mutspectrum_chr), trinucs$trinucleotides, drop = F]
   mutspectrum_chr_norm <- mutspectrum_chr_norm/rowSums(mutspectrum_chr_norm)
   colnames(mutspectrum_chr_norm) <- trinucs$trinucleotides_mutations
-  
-  # # pre-generate samplevectors
-  consecutivesegments <- lapply(X = names(nmutsim_chr), FUN = function(chridx, cn) {
-    cn_chr <- cn[which(seqnames(cn) == chridx)]
-    consecutivesegments <- GRanges(seqnames = chridx, ranges = IRanges(start = cumsum(c(1, width(cn_chr)[-length(cn_chr)])), width = width(cn_chr)), seqinfo = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
-    mcols(consecutivesegments)$offset <- start(cn_chr) - start(consecutivesegments)
-  return(consecutivesegments)
-  }, cn = callablegenome)
-  
-  names(consecutivesegments) <- names(nmutsim_chr)
 
-  
   #### per chromosome
   isaviolations_single_iteration <- mclapply(X = names(nmutsim_chr), FUN = simulate_snvs_chr, nmutsim_chr = nmutsim_chr, trinucs = trinucs, mutspectrum_chr_norm = mutspectrum_chr_norm, consecutivesegments = consecutivesegments, mc.preschedule = F, mc.cores = ncores)
   
@@ -298,12 +287,22 @@ generate_isa_breakdown_file <- function(sampleid, outdir, snvindeldir, cndir, ns
   
   callableseqtrinucsbychrom <- callableseqtrinucsbychrom[, unique(trinucs$trinucleotides)] + 
     callableseqtrinucsbychrom[, as.character(reverseComplement(DNAStringSet(unique(trinucs$trinucleotides))))]
-  #
+
+  # # pre-generate samplevectors
+  consecutivesegments <- lapply(X = unique(seqnames(cn)), FUN = function(chridx, callablecn) {
+    cn_chr <- callablecn[which(seqnames(callablecn) == chridx)]
+    consecutivesegments <- GRanges(seqnames = chridx, ranges = IRanges(start = cumsum(c(1, width(cn_chr)[-length(cn_chr)])), width = width(cn_chr)), seqinfo = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
+    mcols(consecutivesegments)$offset <- start(cn_chr) - start(consecutivesegments)
+    return(consecutivesegments)
+  }, callablecn = callablegenomecn)
+  
+  names(consecutivesegments) <- unique(seqnames(cn))
+  
   
   statsdf <- c(total_genome = sum(as.numeric(width(callablegenomecn))), frac_call_genome = sum(as.numeric(width(callablegenomecn))) / sum(as.numeric(width(callablegenome))), used_snvs = length(snvs), frac_snvs = length(snvs)/totalsnvs)
   write.table(x = statsdf, file = file.path(outdir, paste0(sampleid, "_generalstats.txt")), quote = F, sep = "\t", row.names = T, col.names = F)
   
-  isaviolations <- mclapply(X = 1:nsims, FUN = function(x) {print(paste0("simulation ", x)); simulate_snvs_sample_single_iteration(mutspectrum = mutspectrum, trinucs = trinucs, callablegenome = callablegenomecn, callableseqtrinucsbychrom = callableseqtrinucsbychrom, ncores = 1)}, mc.allow.recursive = F, mc.preschedule = T, mc.cores = ncores)
+  isaviolations <- mclapply(X = 1:nsims, FUN = function(x) {print(paste0("simulation ", x)); simulate_snvs_sample_single_iteration(mutspectrum = mutspectrum, trinucs = trinucs, consecutivesegments = consecutivesegments, callableseqtrinucsbychrom = callableseqtrinucsbychrom, ncores = 1)}, mc.allow.recursive = F, mc.preschedule = T, mc.cores = ncores)
   # isaviolations <- lapply(X = 1:nsims, FUN = function(x) {print(paste0("simulation ", x)); simulate_snvs_sample_single_iteration(mutspectrum = mutspectrum, trinucs = trinucs, callablegenome = callablegenome, callableseqtrinucsbychrom = callableseqtrinucsbychrom, ncores = 1)})
   # browser()
   bfcounts <- t(apply(X = do.call(cbind, lapply(isaviolations, function(x) x$freqbf)), MARGIN = 1, FUN = quantile, probs = c(.025, .5, .975), simplify = T))
@@ -360,12 +359,12 @@ colnames(rslurmdf) <- "sampleid"
 # sampleid <- "7cae6c0b-36fe-411b-bbba-093a4c846d84"
 # sampleid <- "0332b017-17d5-4083-8fc4-9d6f8fdbbbde"
 # sampleid <- "f82d213f-bc06-5b51-e040-11ac0c48687e"
-
-
-# debug(generate_isa_breakdown_file)
-# undebug(simulate_snvs_chr)
-# debug(simulate_snvs_sample_single_iteration)
-
+# 
+# 
+# # debug(generate_isa_breakdown_file)
+# # undebug(simulate_snvs_chr)
+# # debug(simulate_snvs_sample_single_iteration)
+# 
 # set.seed(seed = 13454)
 # estisaviolations <- generate_isa_breakdown_file(sampleid = sampleid, outdir = OUTDIR, snvindeldir = SNVMNVINDELDIR, nsims = NSIMS,
 #                             ncores = NCORES, callablegenome = callablegenome, trinucs = trinucs, cndir = CNDIR)
