@@ -806,7 +806,11 @@ call_parallel_violations <- function(sampleid, sampledir, phasingdir, nboot = 10
   # filter out variants where adjacent (het)SNPs do not behave (BAF/LogR) according to segment
   # filter out variants in the immune regions (as allele frequencies may be messed up)
   # also filter out sites which have ≥ 2 hetSNPs within 25bp window as they considerably bias the allelecounts when phased
-  vafhitsdf_clean <- vafhitsdf[which(!is.na(vafhitsdf$pval) & pmin(vafhitsdf$bafpval_pre, vafhitsdf$bafpval_post) > 1e-3 & pmin(vafhitsdf$logrpval_pre, vafhitsdf$logrpval_post) > 1e-3 & !vafhitsdf$immune_locus & vafhitsdf$nhetsnps25bp < 2), ]
+  vafhitsdf_clean <- vafhitsdf[which(!is.na(vafhitsdf$pval) & vafhitsdf$minor_cn > 0 &
+                                       pmin(vafhitsdf$bafpval_pre, vafhitsdf$bafpval_post) > 1e-3 &
+                                       pmin(vafhitsdf$logrpval_pre, vafhitsdf$logrpval_post) > 1e-3 &
+                                       !vafhitsdf$immune_locus &
+                                       vafhitsdf$nhetsnps25bp < 2), ]
 
   #summary stats
   # par_phasing_conf <- sum(vafhitsroc$is_confirmed)
@@ -828,7 +832,8 @@ call_parallel_violations <- function(sampleid, sampledir, phasingdir, nboot = 10
   sumstats <- c(tot_testable = nrow(vafhitsdf_clean), tot_hetero = sum(vafhitsdf_clean$minor_cn > 0, na.rm = T), 
                 tot_diploid = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1, na.rm = T), nparallel = nrow(finalhits),
                 nparallel_hetero = sum(finalhits$minor_cn > 0, na.rm = T), nparallel_dipl = sum(finalhits$major_cn == 1 & finalhits$minor_cn == 1, na.rm = T),
-                tot_phaseable = nrow(vafhitsdf_clean$is_phaseable), npar_phased = sum(vafhitsdf_clean$is_confirmed), estimtotal, estimtotal_diploid, perfmets_all)
+                tot_phaseable = sum(vafhitsdf_clean$is_phaseable), npar_phased = sum(finalhits$is_confirmed), npar_vaf = sum(finalhits$pval <= perfmets_all[["cutoff"]], na.rm = T),
+                estimtotal, estimtotal_diploid, perfmets_all)
   # sumstats <- c(tot_testable = nrow(vafhitsdf_clean), tot_hetero = sum(vafhitsdf_clean$minor_cn > 0, na.rm = T),
   #               tot_diploid = sum(vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1, na.rm = T), 
   #               nparallel = nrow(finalhits), nparallel_diploid = sum(finalhits$major_cn == 1 & finalhits$minor_cn == 1, na.rm = T),
@@ -868,7 +873,7 @@ get_metrics <- function(vafhitsdf_clean, sampleid, sampledir, nboot, alpha = .1,
 
 get_performance_metrics <- function(df, alpha, plotting = F, sampleid, sampledir) {
   
-  cutoff <- -log10(sum(p.adjust(df$pval, method = "fdr") <= alpha , na.rm = T)*alpha/sum(!is.na(df$pval)))
+  cutoff <- -log10(sum(p.adjust(df$pval, method = "fdr") <= alpha, 1 , na.rm = T)*alpha/sum(!is.na(df$pval), 1))
   phaseableidxs <- which(df$is_phaseable)
   
   if (sum(df[phaseableidxs, "is_confirmed"]) == 0) {
@@ -880,10 +885,11 @@ get_performance_metrics <- function(df, alpha, plotting = F, sampleid, sampledir
   infsitesperf <- performance(prediction.obj = infsitespred, measure = "prec", x.measure = "rec")
   
   fdridx <- tail(which(infsitesperf@alpha.values[[1]] >= cutoff), n = 1)
-  if (length(fdridx) == 0) {
-    fdridx <- which.max(infsitesperf@alpha.values[[1]])
+  if (fdridx == 1) {
+    prec <- infsitesperf@y.values[[1]][fdridx+1]
+  } else {
+    prec <- infsitesperf@y.values[[1]][fdridx]
   }
-  prec <- infsitesperf@y.values[[1]][fdridx]
   rec <- infsitesperf@x.values[[1]][fdridx]
   
   optimperf <- c(cutoff = cutoff, prec = prec, rec = rec)

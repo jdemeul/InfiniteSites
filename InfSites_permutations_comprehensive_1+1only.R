@@ -21,10 +21,10 @@ source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/ge
 SNVMNVINDELDIR <- "/srv/shared/vanloo/ICGC_snv_mnv/final_consensus_12oct_passonly/"
 RELEASETABLEFILE <- "/srv/shared/vanloo/ICGC_annotations/release_may2016.v1.4.tsv"
 SUMTABLE_WHOLE <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/results/summary_table_combined_annotations_v2_JD.txt"
-OUTDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isabreakdown_1plus1_only/"
+OUTDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isabreakdown_1plus1_only_writefrac/"
 CNDIR <- "/srv/shared/vanloo/ICGC_consensus_copynumber/20170119_release/"
 
-NCORES <- 12
+NCORES <- 18
 NSIMS <- 100
 
 
@@ -67,17 +67,19 @@ get_mutspectrum <- function(mutations, trinucs) {
 
 
 # classify/count isaviolations
-classify_violations <- function(sampledsnvs) {
+classify_violations <- function(sampledsnvs, trinucs) {
   
   # back and forward mutation
   bfhits <- findOverlaps(sampledsnvs, type = "equal", drop.self = T, drop.redundant = T)
   if (length(bfhits) > 0) {
     mut1 <- factor(x = paste0(sampledsnvs[queryHits(bfhits)]$trinucobs, ">", sampledsnvs[queryHits(bfhits)]$alt), levels = trinucs$trinucleotides_mutations)
     mut2 <- factor(x = paste0(sampledsnvs[subjectHits(bfhits)]$trinucobs, ">", sampledsnvs[subjectHits(bfhits)]$alt), levels = trinucs$trinucleotides_mutations)
-    bfhitsdf <- data.frame(table(mut1, mut2))
-    colnames(bfhitsdf) <- c("mut1", "mut2", "freqbf")
+    isaviolations <- data.frame(table(mut1, mut2))
+    # colnames(bfhitsdf) <- c("mut1", "mut2", "freqbf")
+    # colnames(isaviolations) <- c("mut1", "mut2", "freq")
   } else {
-    bfhitsdf <- expand.grid(mut1 = factor(trinucs$trinucleotides_mutations), mut2 = factor(trinucs$trinucleotides_mutations), freqbf = 0)
+    isaviolations <- expand.grid(mut1 = factor(trinucs$trinucleotides_mutations), mut2 = factor(trinucs$trinucleotides_mutations), Freq = 0)
+    # bfhitsdf <- expand.grid(mut1 = factor(trinucs$trinucleotides_mutations), mut2 = factor(trinucs$trinucleotides_mutations), freqbf = 0)
   }
   
   # hits to another allele
@@ -89,13 +91,15 @@ classify_violations <- function(sampledsnvs) {
     mut1 <- idxv[paste0(sampleranges_nostrand[queryHits(alhits)]$trinucobs, ">", sampleranges_nostrand[queryHits(alhits)]$alt)]
     mut2 <- idxv[paste0(sampleranges_nostrand[subjectHits(alhits)]$trinucobs, ">", sampleranges_nostrand[subjectHits(alhits)]$alt)]
     alhitsdf <- data.frame(mut1 = trinucs$trinucleotides_mutations[pmin(mut1, mut2)], mut2 = trinucs$trinucleotides_mutations[pmax(mut1, mut2)])
-    alhitsdf <- data.frame(table(mut1 = factor(alhitsdf$mut1, levels = trinucs$trinucleotides_mutations), mut2 = factor(alhitsdf$mut2, levels = trinucs$trinucleotides_mutations)))
-    colnames(alhitsdf) <- c("mut1", "mut2", "freqal")
+    alfreq <- data.frame(table(mut1 = factor(alhitsdf$mut1, levels = trinucs$trinucleotides_mutations), mut2 = factor(alhitsdf$mut2, levels = trinucs$trinucleotides_mutations)))$Freq
+    # alhitsdf <- data.frame(table(mut1 = factor(alhitsdf$mut1, levels = trinucs$trinucleotides_mutations), mut2 = factor(alhitsdf$mut2, levels = trinucs$trinucleotides_mutations)))
+    # colnames(alhitsdf) <- c("mut1", "mut2", "freqal")
   } else {
-    alhitsdf <- expand.grid(mut1 = factor(trinucs$trinucleotides_mutations), mut2 = factor(trinucs$trinucleotides_mutations), freqal = 0)
+    # alhitsdf <- expand.grid(mut1 = factor(trinucs$trinucleotides_mutations), mut2 = factor(trinucs$trinucleotides_mutations), freqal = 0)
+    alfreq <- rep(0, length(trinucs$trinucleotides_mutations)^2)
   }
   
-  isaviolations <- cbind(bfhitsdf, freqal = alhitsdf$freqal)
+  isaviolations$Freq <- isaviolations$Freq + alfreq
   
   return(isaviolations)
 }
@@ -206,14 +210,14 @@ simulate_snvs_chr <- function(chridx, nmutsim_chr, consecutivesegments, trinucs,
     sampledsnvs <- sampledsnvs[1:nmutsim_chr[[chridx]]]
     
     # final classification
-    isaviolations <- classify_violations(sampledsnvs = sampledsnvs)
+    isaviolations <- classify_violations(sampledsnvs = sampledsnvs, trinucs = trinucs)
 
   return(isaviolations)
 }
 
 
 
-simulate_snvs_sample_single_iteration <- function(mutspectrum, trinucs, consecutivesegments, ncores, callableseqtrinucsbychrom) {
+simulate_snvs_sample_single_iteration <- function(mutspectrum, trinucs, consecutivesegments, ncores, callableseqtrinucsbychrom, reftable) {
   
   #### sampling repeats start here
   # resample total number of muts again
@@ -233,6 +237,8 @@ simulate_snvs_sample_single_iteration <- function(mutspectrum, trinucs, consecut
                               obs = mutspectrum, prior = muttypeprior))
   colnames(mutspectrum_chr) <- colnames(mutspectrum)
   
+  # normfact <- callableseqtrinucsbychrom[rownames(mutspectrum_chr), trinucs$trinucleotides, drop = F]
+  # normfact[normfact == 0] <- min(normfact[normfact > 0])
   mutspectrum_chr_norm <- mutspectrum_chr/callableseqtrinucsbychrom[rownames(mutspectrum_chr), trinucs$trinucleotides, drop = F]
   mutspectrum_chr_norm <- mutspectrum_chr_norm/rowSums(mutspectrum_chr_norm)
   colnames(mutspectrum_chr_norm) <- trinucs$trinucleotides_mutations
@@ -241,7 +247,7 @@ simulate_snvs_sample_single_iteration <- function(mutspectrum, trinucs, consecut
   isaviolations_single_iteration <- mclapply(X = names(nmutsim_chr), FUN = simulate_snvs_chr, nmutsim_chr = nmutsim_chr, trinucs = trinucs, mutspectrum_chr_norm = mutspectrum_chr_norm, consecutivesegments = consecutivesegments, mc.preschedule = F, mc.cores = ncores)
   
   # combine and return
-  isaviolations_single_iteration <- Reduce('+', lapply(isaviolations_single_iteration, FUN = function(x) x[, c("freqbf", "freqal")]))
+  isaviolations_single_iteration <- Reduce('+', lapply(isaviolations_single_iteration, FUN = function(x, rowidxs) x[rowidxs, "Freq"], rowidxs = reftable$idx))
   
   return(isaviolations_single_iteration)
 }
@@ -249,9 +255,12 @@ simulate_snvs_sample_single_iteration <- function(mutspectrum, trinucs, consecut
 
 
 
-generate_isa_breakdown_file <- function(sampleid, outdir, snvindeldir, cndir, nsims, ncores, callablegenome, trinucs) {
+generate_isa_breakdown_file <- function(sampleid, outdir, snvindeldir, cndir, nsims, ncores, callablegenome, trinucs, trinucsprior, reftable, cnsubset = "dipl", effgenomefrac = 1) {
 
   print(paste0("Running sample ", sampleid))
+  
+  sampleoutdir <- file.path(outdir, sampleid)
+  dir.create(sampleoutdir, showWarnings = F)
 
   # load snvs
   snv_mnvfile <- list.files(path = snvindeldir, pattern = paste0(sampleid, ".consensus.20160830.somatic.snv_mnv.vcf.gz$"), full.names = T, recursive = T)
@@ -266,7 +275,11 @@ generate_isa_breakdown_file <- function(sampleid, outdir, snvindeldir, cndir, ns
   snvs <- snvs[lengths(mcols(snvs)$ALT) == 1 & seqnames(snvs) != "Y"]
   # MODS for 1+1
   cn <- GRanges(read.delim(file = cnfile, as.is = T), seqinfo = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
-  cn <- reduce(cn[which(cn$major_cn == 1 & cn$minor_cn == 1)])
+  cn <- reduce(cn[which(switch(cnsubset,
+                               all = rep(T, length(cn)),
+                               het = cn$minor_cn > 0,
+                               dipl = cn$major_cn == 1 & cn$minor_cn == 1))])
+  # cn <- reduce(cn[which(cn$major_cn == nmajor & cn$minor_cn == nminor)])
   snvs <- subsetByOverlaps(x = snvs, ranges = cn, type = "within")
   
   if (length(snvs) < 2)
@@ -279,48 +292,66 @@ generate_isa_breakdown_file <- function(sampleid, outdir, snvindeldir, cndir, ns
   mutspectrum <- get_mutspectrum(mutations = snvs, trinucs = trinucs)
   
   #
-  callablegenomecn <- intersect(x = callablegenome, y = cn)
-  callableseq <- getSeq(x = BSgenome.Hsapiens.1000genomes.hs37d5, callablegenomecn)
-  callableseqtrinucsbychrom <- by(data = trinucleotideFrequency(callableseq), INDICES = seqnames(callablegenomecn), FUN = colSums)
-  # callableseqtrinucs <- Reduce(f = '+', x = callableseqtrinucsbychrom)
-  callableseqtrinucsbychrom <- data.frame(do.call(rbind, lapply(callableseqtrinucsbychrom, function(x) x/sum(x))))
+  callablegenomecn_full <- intersect(x = callablegenome, y = cn)
   
-  callableseqtrinucsbychrom <- callableseqtrinucsbychrom[, unique(trinucs$trinucleotides)] + 
-    callableseqtrinucsbychrom[, as.character(reverseComplement(DNAStringSet(unique(trinucs$trinucleotides))))]
-
-  # # pre-generate samplevectors
-  consecutivesegments <- lapply(X = unique(seqnames(cn)), FUN = function(chridx, callablecn) {
-    cn_chr <- callablecn[which(seqnames(callablecn) == chridx)]
-    consecutivesegments <- GRanges(seqnames = chridx, ranges = IRanges(start = cumsum(c(1, width(cn_chr)[-length(cn_chr)])), width = width(cn_chr)), seqinfo = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
-    mcols(consecutivesegments)$offset <- start(cn_chr) - start(consecutivesegments)
-    return(consecutivesegments)
-  }, callablecn = callablegenomecn)
+  for (effgenfrac in effgenomefrac) {
+    callablegenomecn <- resize(callablegenomecn_full, width = ceiling(width(callablegenomecn_full)*effgenfrac), fix = "center")
+    
+    callableseq <- getSeq(x = BSgenome.Hsapiens.1000genomes.hs37d5, callablegenomecn)
+    callableseqtrinucsbychrom <- by(data = trinucleotideFrequency(callableseq), INDICES = seqnames(callablegenomecn), FUN = colSums)
+    # callableseqtrinucs <- Reduce(f = '+', x = callableseqtrinucsbychrom)
+    callableseqtrinucsbychrom <- data.frame(do.call(rbind, lapply(callableseqtrinucsbychrom, function(x, prior) (x+prior)/sum(x, prior), prior = trinucsprior)))
+    
+    callableseqtrinucsbychrom <- callableseqtrinucsbychrom[, unique(trinucs$trinucleotides)] + 
+      callableseqtrinucsbychrom[, as.character(reverseComplement(DNAStringSet(unique(trinucs$trinucleotides))))]
+    
+    # # pre-generate samplevectors
+    consecutivesegments <- lapply(X = unique(seqnames(callablegenomecn)), FUN = function(chridx, callablecn) {
+      cn_chr <- callablecn[which(seqnames(callablecn) == chridx)]
+      consecutivesegments <- GRanges(seqnames = chridx, ranges = IRanges(start = cumsum(c(1, width(cn_chr)[-length(cn_chr)])), width = width(cn_chr)), seqinfo = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
+      mcols(consecutivesegments)$offset <- start(cn_chr) - start(consecutivesegments)
+      return(consecutivesegments)
+    }, callablecn = callablegenomecn)
+    
+    names(consecutivesegments) <- unique(seqnames(callablegenomecn))
+    
+    
+    statsdf <- c(total_genome = sum(as.numeric(width(callablegenomecn))), frac_call_genome = sum(as.numeric(width(callablegenomecn))) / sum(as.numeric(width(callablegenome))), used_snvs = length(snvs), frac_snvs = length(snvs)/totalsnvs)
+    write.table(x = statsdf, file = file.path(sampleoutdir, paste0(sampleid, "_generalstats_effgenfrac", effgenfrac, ".txt")), quote = F, sep = "\t", row.names = T, col.names = F)
+    
+    isaviolations <- mclapply(X = 1:nsims, FUN = function(x) {print(paste0("simulation ", x)); simulate_snvs_sample_single_iteration(mutspectrum = mutspectrum, trinucs = trinucs, consecutivesegments = consecutivesegments, callableseqtrinucsbychrom = callableseqtrinucsbychrom, ncores = 1, reftable = reftable)}, mc.allow.recursive = F, mc.preschedule = T, mc.cores = ncores)
+    # isaviolations <- lapply(X = 1:nsims, FUN = function(x) {print(paste0("simulation ", x)); simulate_snvs_sample_single_iteration(mutspectrum = mutspectrum, trinucs = trinucs, callablegenome = callablegenome, callableseqtrinucsbychrom = callableseqtrinucsbychrom, ncores = 1)})
+    # browser()
+    isacounts <- t(apply(X = do.call(cbind, isaviolations), MARGIN = 1, FUN = quantile, probs = c(.025, .5, .975), simplify = T))
+    # bfcounts <- t(apply(X = do.call(cbind, lapply(isaviolations, function(x) x$freqbf)), MARGIN = 1, FUN = quantile, probs = c(.025, .5, .975), simplify = T))
+    # alcounts <- t(apply(X = do.call(cbind, lapply(isaviolations, function(x) x$freqal)), MARGIN = 1, FUN = quantile, probs = c(.025, .5, .975), simplify = T))
+    
+    isacountstot <- Reduce('+', isaviolations)
+    # bfcountstot <- Reduce('+', lapply(isaviolations, FUN = function(x) x$freqbf))
+    # alcountstot <- Reduce('+', lapply(isaviolations, FUN = function(x) x$freqal))
+    
+    finalcounts <- cbind(reftable[, -1], isacounts, isacountstot)
+    # finalcounts <- cbind(reftable[, -1], bfcounts, alcounts, bfcountstot, alcountstot)
+    #finalcounts <- cbind(expand.grid(factor(trinucs$trinucleotides_mutations), factor(trinucs$trinucleotides_mutations)), bfcounts, alcounts)
+    colnames(finalcounts) <- c("mut1", "mut2", "type", "freq_low", "freq_med", "freq_hi", "counts_tot")
+    
+    isaviolations_pertype <- lapply(X = isaviolations, FUN = function(x, types) c(by(data = x, INDICES = types, FUN = sum)), types = reftable$type)
+    isaviolations_pertype <- data.frame(t(apply(X = do.call(rbind, isaviolations_pertype), MARGIN = 2, FUN = quantile, probs = c(.025, .5, .975), simplify = T)))
+    isaviolations_pertype$type <- row.names(isaviolations_pertype)
+    
+    # bftotals <- quantile(sapply(isaviolations, function(x) sum(x$freqbf)), probs = c(.025, .5, .975))
+    # altotals <- quantile(sapply(isaviolations, function(x) sum(x$freqal)), probs = c(.025, .5, .975))
+    # totals <- data.frame(nsims, t(bftotals), t(altotals))
+    colnames(isaviolations_pertype) <- c("freq_low", "freq_med", "freq_hi", "type")
+    
+    # finalcounts <- rbind(finalcounts, totals)
+    
+    write.table(x = isaviolations_pertype[, c( "type", "freq_low", "freq_med", "freq_hi")], file = file.path(sampleoutdir, paste0(sampleid, "_infsites_totals_effgenfrac", effgenfrac, ".txt")), quote = F, sep = "\t", row.names = F)  
+    write.table(x = finalcounts, file = file.path(sampleoutdir, paste0(sampleid, "_infsites_permut_effgenfrac", effgenfrac, ".txt")), quote = F, sep = "\t", row.names = F)
+    saveRDS(object = isaviolations, file = file.path(sampleoutdir, paste0(sampleid, "_infsites_violations_effgenfrac", effgenfrac, ".rds")))
+  }
   
-  names(consecutivesegments) <- unique(seqnames(cn))
-  
-  
-  statsdf <- c(total_genome = sum(as.numeric(width(callablegenomecn))), frac_call_genome = sum(as.numeric(width(callablegenomecn))) / sum(as.numeric(width(callablegenome))), used_snvs = length(snvs), frac_snvs = length(snvs)/totalsnvs)
-  write.table(x = statsdf, file = file.path(outdir, paste0(sampleid, "_generalstats.txt")), quote = F, sep = "\t", row.names = T, col.names = F)
-  
-  isaviolations <- mclapply(X = 1:nsims, FUN = function(x) {print(paste0("simulation ", x)); simulate_snvs_sample_single_iteration(mutspectrum = mutspectrum, trinucs = trinucs, consecutivesegments = consecutivesegments, callableseqtrinucsbychrom = callableseqtrinucsbychrom, ncores = 1)}, mc.allow.recursive = F, mc.preschedule = T, mc.cores = ncores)
-  # isaviolations <- lapply(X = 1:nsims, FUN = function(x) {print(paste0("simulation ", x)); simulate_snvs_sample_single_iteration(mutspectrum = mutspectrum, trinucs = trinucs, callablegenome = callablegenome, callableseqtrinucsbychrom = callableseqtrinucsbychrom, ncores = 1)})
-  # browser()
-  bfcounts <- t(apply(X = do.call(cbind, lapply(isaviolations, function(x) x$freqbf)), MARGIN = 1, FUN = quantile, probs = c(.025, .5, .975), simplify = T))
-  alcounts <- t(apply(X = do.call(cbind, lapply(isaviolations, function(x) x$freqal)), MARGIN = 1, FUN = quantile, probs = c(.025, .5, .975), simplify = T))
-  finalcounts <- cbind(expand.grid(factor(trinucs$trinucleotides_mutations), factor(trinucs$trinucleotides_mutations)), bfcounts, alcounts)
-  colnames(finalcounts) <- c("mut1", "mut2", "freqbf_low", "freqbf_med", "freqbf_hi", "freqal_low", "freqal_med", "freqal_hi")
-  
-  bftotals <- quantile(sapply(isaviolations, function(x) sum(x$freqbf)), probs = c(.025, .5, .975))
-  altotals <- quantile(sapply(isaviolations, function(x) sum(x$freqal)), probs = c(.025, .5, .975))
-  totals <- data.frame(mut1 = NA, mut2 = NA, t(bftotals), t(altotals))
-  colnames(totals) <- c("mut1", "mut2", "freqbf_low", "freqbf_med", "freqbf_hi", "freqal_low", "freqal_med", "freqal_hi")
-  
-  finalcounts <- rbind(finalcounts, totals)
-  
-  write.table(x = finalcounts, file = file.path(outdir, paste0(sampleid, "_infsites_backfwd_allelic.txt")), quote = F, sep = "\t", row.names = F)
-  saveRDS(object = isaviolations, file = file.path(outdir, paste0(sampleid, "_infsites_violations.rds")))
-  
-  return(finalcounts)
+  return(NULL)
 }
 
 
@@ -340,11 +371,25 @@ seqlevelsStyle(callablegenome) <- "Ensembl"
 callablegenome <- GRanges(callablegenome, seqinfo = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
 callablegenome <- sort(callablegenome[mcols(callablegenome)$score == 1])
 
+trinucsprior <- colSums(trinucleotideFrequency(getSeq(x = BSgenome.Hsapiens.1000genomes.hs37d5)))
+trinucsprior <- trinucsprior/sum(trinucsprior)
+
 trinucs <- generate_bases_types_trinuc()
 
-# rslurmdf <- read.delim(SUMTABLE_WHOLE, as.is = T)
-rslurmdf <- read_pcawg_release_table(release_table_file = RELEASETABLEFILE)[, "tumor_wgs_aliquot_id" , drop = F]
-colnames(rslurmdf) <- "sampleid"
+# # rslurmdf <- read.delim(SUMTABLE_WHOLE, as.is = T)
+# rslurmdf <- read_pcawg_release_table(release_table_file = RELEASETABLEFILE)[, "tumor_wgs_aliquot_id" , drop = F]
+# colnames(rslurmdf) <- "sampleid"
+# # subset to non-finished samples
+# doneids <- gsub(pattern = "_infsites_violations.rds", replacement = "", x = list.files(path = OUTDIR, pattern = ".rds$"))
+# rslurmdf <- rslurmdf[which(!rslurmdf$sampleid %in% doneids), , drop = F]
+
+bialsummary <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_summary.txt", as.is = T, sep = " ")$sampleid
+alsummary <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits.txt", as.is = T, sep = " ")$sampleid
+
+rslurmdf <- data.frame(sampleid = union(bialsummary, alsummary))
+
+### load reference table:
+reftable <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isavioltypes_reffile.txt", as.is = T)
 
 # do not redo stuff for now
 # doneids <- gsub(pattern = "_infsites_backfwd_allelic.txt", replacement = "", x = list.files(path = OUTDIR, pattern = "_infsites_backfwd_allelic.txt$"))
@@ -358,32 +403,38 @@ colnames(rslurmdf) <- "sampleid"
 # sampleid <- "fc876f5c-8339-bc9c-e040-11ac0d485160"
 # sampleid <- "7cae6c0b-36fe-411b-bbba-093a4c846d84"
 # sampleid <- "0332b017-17d5-4083-8fc4-9d6f8fdbbbde"
-# sampleid <- "f82d213f-bc06-5b51-e040-11ac0c48687e"
-# 
-# 
-# # debug(generate_isa_breakdown_file)
-# # undebug(simulate_snvs_chr)
-# # debug(simulate_snvs_sample_single_iteration)
-# 
+# sampleid <- "5dbf3203-ce73-41e4-bf9a-32fc856f73f5"
+# # 
+# # 
+# debug(generate_isa_breakdown_file)
+# debug(simulate_snvs_chr)
+# debug(simulate_snvs_sample_single_iteration)
+# # 
 # set.seed(seed = 13454)
 # estisaviolations <- generate_isa_breakdown_file(sampleid = sampleid, outdir = OUTDIR, snvindeldir = SNVMNVINDELDIR, nsims = NSIMS,
-#                             ncores = NCORES, callablegenome = callablegenome, trinucs = trinucs, cndir = CNDIR)
+#                                                 ncores = NCORES, callablegenome = callablegenome, trinucsprior = trinucsprior,
+#                                                 trinucs = trinucs, cndir = CNDIR, reftable = reftable, cnsubset = "dipl", effgenomefrac = seq(.1, 1, .15))
 
-#### slurm wrapping
-generate_isa_breakdown_file_slurmwrap <- function(sampleid) {
-  estisaviolations <- generate_isa_breakdown_file(sampleid = sampleid, outdir = OUTDIR, snvindeldir = SNVMNVINDELDIR, cndir = CNDIR, nsims = NSIMS,
-                                                  ncores = NCORES, callablegenome = callablegenome, trinucs = trinucs)
-  return(NULL)
-}
+lapply(X = c("deb9fbb6-656b-41ce-8299-554efc2379bd", "2df02f2b-9f1c-4249-b3b4-b03079cd97d9"), FUN = generate_isa_breakdown_file, outdir = OUTDIR, snvindeldir = SNVMNVINDELDIR, nsims = NSIMS,
+       ncores = NCORES, callablegenome = callablegenome, trinucsprior = trinucsprior, trinucs = trinucs, cndir = CNDIR, reftable = reftable,
+       cnsubset = "dipl", effgenomefrac = seq(.1, 1, .3))
 
-# debug(get_mutspectrum)
-# generate_isa_breakdown_file_slurmwrap(sampleid = sampleid)
-
+# #### slurm wrapping
+# generate_isa_breakdown_file_slurmwrap <- function(sampleid) {
+#   estisaviolations <- generate_isa_breakdown_file(sampleid = sampleid, outdir = OUTDIR, snvindeldir = SNVMNVINDELDIR, cndir = CNDIR, nsims = NSIMS,
+#                                                   ncores = NCORES, callablegenome = callablegenome, trinucs = trinucs, trinucsprior = trinucsprior,
+#                                                   reftable = reftable, cnsubset = "dipl", effgenomefrac = seq(.1, 1, .15))
+#   return(NULL)
+# }
 # 
-isajob <- slurm_apply(f = generate_isa_breakdown_file_slurmwrap, params = rslurmdf[,,drop=F], jobname = "isajob4", nodes = 470, cpus_per_node = 1, add_objects = ls(),
-                          pkgs = rev(.packages()), libPaths = .libPaths(), submit = T, slurm_options = list(exclude="fat-worker00[1-2]"))
-
-
+# # debug(get_mutspectrum)
+# # generate_isa_breakdown_file_slurmwrap(sampleid = sampleid)
+# 
+# # 
+# isajob <- slurm_apply(f = generate_isa_breakdown_file_slurmwrap, params = rslurmdf[,,drop=F], jobname = "isajob6", nodes = 114, cpus_per_node = 2, add_objects = ls(),
+#                           pkgs = rev(.packages()), libPaths = .libPaths(), submit = T)
+# 
+# 
 
 
 

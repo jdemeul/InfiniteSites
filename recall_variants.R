@@ -100,3 +100,36 @@ rslurmdf <- rslurmdf[which((rslurmdf$dcc_project_code %in% c("MELA-AU") | rslurm
 
 write.table(x = rslurmdf[, 2:6], file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/data/samples_to_recall.txt", quote = F, sep = "\t", row.names = F, col.names = T)
 
+
+
+#### cleanup
+#### check which samples have all calls
+samples_to_recall <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/data/samples_to_recall.txt", as.is = T)
+pcawgrecalldirs <- basename(list.dirs(path = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/data/pcawg_recall/", recursive = T))
+pcawgrecalldirs <- pcawgrecalldirs[nchar(pcawgrecalldirs) == 36]
+
+# tormdirs <- setdiff(x = pcawgrecalldirs, y = samples_to_recall$tumor_wgs_aliquot_id)
+# 
+# for (smpl in tormdirs) {
+#   # smpl <- tormdirs[1]
+#   smpldir <- list.files(path = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/data/pcawg_recall/", pattern = paste0(smpl, "$"), include.dirs = T, recursive = T, full.names = T)
+#   unlink(smpldir, recursive = T)
+# }
+
+normalbams <- sub(pattern = "_normal.aln.recal.bam", replacement = "", basename(list.files(path = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/data/pcawg_recall/", pattern = "_normal.aln.recal.bam", recursive = T)))
+tumorbams <- sub(pattern = "_tumor.aln.recal.bam", replacement = "", basename(list.files(path = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/data/pcawg_recall/", pattern = "_tumor.aln.recal.bam", recursive = T)))
+hastwicefiltered <- sub(pattern = "_tumor_mutect2_snvs_indels_twicefiltered.vcf.gz", replacement = "", basename(list.files(path = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/data/pcawg_recall/", pattern = "_tumor_mutect2_snvs_indels_twicefiltered.vcf.gz$", recursive = T)))
+
+hasboth <- intersect(x = normalbams, y = tumorbams)
+# hasbothbutfailed <- setdiff(x = hasboth, y = hastwicefiltered)
+# hasbothbutfailed %in% samples_to_recall$tumor_wgs_aliquot_id
+
+### NOTE, first in array (2b142863-b963-4cc9-8f8f-c72503c93390) is still processing
+
+write.table(x = samples_to_recall[samples_to_recall$tumor_wgs_aliquot_id %in% hasboth, ], file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/data/samples_to_recall_success.txt", quote = F, sep = "\t", row.names = F, col.names = T)
+#### end cleanup
+
+
+
+
+
