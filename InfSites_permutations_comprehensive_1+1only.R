@@ -21,11 +21,11 @@ source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/ge
 SNVMNVINDELDIR <- "/srv/shared/vanloo/ICGC_snv_mnv/final_consensus_12oct_passonly/"
 RELEASETABLEFILE <- "/srv/shared/vanloo/ICGC_annotations/release_may2016.v1.4.tsv"
 SUMTABLE_WHOLE <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/results/summary_table_combined_annotations_v2_JD.txt"
-OUTDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isabreakdown_1plus1_only_writefrac/"
+OUTDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isabreakdown_het_only_writefrac/"
 CNDIR <- "/srv/shared/vanloo/ICGC_consensus_copynumber/20170119_release/"
 
 NCORES <- 10
-NSIMS <- 100
+NSIMS <- 1000
 
 
 gammaShRaFromModeSD = function( mode , sd ) {
@@ -138,11 +138,11 @@ simulate_snvs_chr <- function(chridx, nmutsim_chr, consecutivesegments, trinucs,
     # keep track of "time"
     sampleranges$timestep <- 1:length(sampleranges)
     
-    # annotate with trinuc context and copy (encoded as strand here)
+    # annotate with trinuc context
     sampleranges$trinuc <- getSeq(sampleranges, x = BSgenome.Hsapiens.1000genomes.hs37d5)
     agidxs <- which(as.character(subseq(sampleranges$trinuc, 2, 2)) %in% c("A", "G"))
     mcols(sampleranges)[agidxs, "trinuc"] <- reverseComplement(mcols(sampleranges)[agidxs, "trinuc"])
-    strand(sampleranges) <- sample(x = c("+", "-"), size = length(sampleranges), replace = T)
+
     
     # omit trinucs containing N's
     naidxs <- grep(pattern = "N", x = sampleranges$trinuc)
@@ -164,34 +164,39 @@ simulate_snvs_chr <- function(chridx, nmutsim_chr, consecutivesegments, trinucs,
     sampleranges_previousit <- sampleranges
   }
   
+  # encode chromosome copy (diploid setting) as + or - strand
+  strand(sampleranges) <- sample(x = c("+", "-"), size = length(sampleranges), replace = T)
+
   print(paste0("chr", chridx, ": sampled ", round(length(sampleranges)/nmutsim_chr[[chridx]]), "X to reach target ", 1.1*nmutsim_chr[[chridx]]))
-  
-  
-  # keep only those which are initially hit OR a potential double hit (meaning, first time around the position was hit, reevaluate second time)
-  inithits <- sampleranges[inithitidxs]
-  potdoublehits <- sampleranges[unique(subjectHits(doublehits)[which(queryHits(doublehits) %in% inithitidxs)])]
-  # remove any second hit from the initial hits for re-evaluation as second hit to new trinuc context
-  inithits <- inithits[which(!inithits$timestep %in% potdoublehits$timestep)]
+
+  # doublehits <- findOverlaps(query = sampleranges, type = "equal", drop.self = T, drop.redundant = T)
+  # 
+  # # keep only those which are initially hit OR a potential double hit (meaning, first time around the position was hit, reevaluate second time)
+  # inithits <- sampleranges[inithitidxs]
+  # potdoublehits <- sampleranges[unique(subjectHits(doublehits)[which(queryHits(doublehits) %in% inithitidxs)])]
+  # # remove any second hit from the initial hits for re-evaluation as second hit to new trinuc context
+  # inithits <- inithits[which(!inithits$timestep %in% potdoublehits$timestep)]
   
   
   ### more efficient
-  # keep only those which are initially hit OR a potential double hit (meaning, first time around the position was hit, reevaluate second time)
+  # keep only those which are initially hit 
   inithits <- sampleranges[inithitidxs]
   noninithits <- sampleranges[-inithitidxs]
   
-  # identify all double hits (i.e. same position & same copy)
-  doublehits <- findOverlaps(query = inithits, subject = noninithits, type = "equal")
-  potdoublehits <- noninithits[unique(subjectHits(doublehits))]
   # remove any second hit from the initial hits for re-evaluation as second hit to new trinuc context
-  inithits <- inithits[which(!inithits$timestep %in% potdoublehits$timestep)]
+  secondhits <- which(duplicated(inithits))
+  if (length(secondhits) > 0) {
+    noninithits <- c(noninithits, inithits[secondhits])
+    inithits <- inithits[-secondhits]
+  }
   
-  
-  
+  # identify all potential double hits (meaning, at some point the position was hit, reevaluate acceptance of other mutation)
+  potdoublehits <- subsetByOverlaps(x = noninithits, ranges = inithits, type = "equal")
   ### done more eff
   
   
   # cleanup
-  rm(sampleranges)
+  rm(sampleranges, noninithits, sampleranges_previousit, inithitidxs)
   
   # annotate mutations accepted during first pass
   inithits$alt <- sapply(X = as.character(inithits$trinuc), FUN = function(x, mutlist) sample(x = names(mutlist[[x]]), size = 1, prob = mutlist[[x]]), mutlist = probsmuttype)
@@ -274,7 +279,7 @@ simulate_snvs_sample_single_iteration <- function(mutspectrum, trinucs, consecut
   } else {
     isaviolations_single_iteration <- rep(0, nrow(reftable))
   }
-  
+
   return(isaviolations_single_iteration)
 }
 
@@ -287,7 +292,7 @@ generate_isa_breakdown_file <- function(sampleid, outdir, snvindeldir, cndir, ns
   
   sampleoutdir <- file.path(outdir, sampleid)
   dir.create(sampleoutdir, showWarnings = F)
-
+  
   # load snvs
   snv_mnvfile <- list.files(path = snvindeldir, pattern = paste0(sampleid, ".consensus.20160830.somatic.snv_mnv.vcf.gz$"), full.names = T, recursive = T)
   cnfile <- paste0(cndir, sampleid, ".consensus.20170119.somatic.cna.annotated.txt")
@@ -321,6 +326,11 @@ generate_isa_breakdown_file <- function(sampleid, outdir, snvindeldir, cndir, ns
   callablegenomecn_full <- intersect(x = callablegenome, y = cn)
   
   for (effgenfrac in effgenomefrac) {
+    outfile1 <- file.path(sampleoutdir, paste0(sampleid, "_infsites_totals_effgenfrac", effgenfrac, ".txt"))
+    outfile2 <- file.path(sampleoutdir, paste0(sampleid, "_infsites_permut_effgenfrac", effgenfrac, ".txt"))
+    
+    if (all(file.exists(outfile1, outfile2))) next
+    
     callablegenomecn <- resize(callablegenomecn_full, width = ceiling(width(callablegenomecn_full)*effgenfrac), fix = "center")
     
     callableseq <- getSeq(x = BSgenome.Hsapiens.1000genomes.hs37d5, callablegenomecn)
@@ -346,7 +356,8 @@ generate_isa_breakdown_file <- function(sampleid, outdir, snvindeldir, cndir, ns
     write.table(x = statsdf, file = file.path(sampleoutdir, paste0(sampleid, "_generalstats_effgenfrac", effgenfrac, ".txt")), quote = F, sep = "\t", row.names = T, col.names = F)
     
     # set seed as integer contained in last bit of sampleid
-    set.seed(seed = as.integer(gsub(pattern = "[a-z\\-]", replacement = "", x = substr(sampleid,25,37))), kind = "L'Ecuyer-CMRG")
+    
+    set.seed(seed = sum(as.integer(grep(pattern = "[0-9]", x = strsplit(sampleid, split = "")[[1]], value = T))), kind = "L'Ecuyer-CMRG")
     mc.reset.stream()
     
     isaviolations <- mclapply(X = 1:nsims, FUN = function(x) {
@@ -391,8 +402,8 @@ generate_isa_breakdown_file <- function(sampleid, outdir, snvindeldir, cndir, ns
     
     # finalcounts <- rbind(finalcounts, totals)
     
-    write.table(x = isaviolations_pertype[, c( "type", "freq_low", "freq_med", "freq_hi")], file = file.path(sampleoutdir, paste0(sampleid, "_infsites_totals_effgenfrac", effgenfrac, ".txt")), quote = F, sep = "\t", row.names = F)  
-    write.table(x = finalcounts, file = file.path(sampleoutdir, paste0(sampleid, "_infsites_permut_effgenfrac", effgenfrac, ".txt")), quote = F, sep = "\t", row.names = F)
+    write.table(x = isaviolations_pertype[, c( "type", "freq_low", "freq_med", "freq_hi")], file = outfile1, quote = F, sep = "\t", row.names = F)  
+    write.table(x = finalcounts, file = outfile2, quote = F, sep = "\t", row.names = F)
   }
   
   return(NULL)
@@ -423,21 +434,21 @@ trinucs <- generate_bases_types_trinuc()
 # RNGkind("L'Ecuyer-CMRG")
 
 # # rslurmdf <- read.delim(SUMTABLE_WHOLE, as.is = T)
-# rslurmdf <- read_pcawg_release_table(release_table_file = RELEASETABLEFILE)[, "tumor_wgs_aliquot_id" , drop = F]
-# colnames(rslurmdf) <- "sampleid"
+rslurmdf <- read_pcawg_release_table(release_table_file = RELEASETABLEFILE)[, "tumor_wgs_aliquot_id" , drop = F]
+colnames(rslurmdf) <- "sampleid"
 # # subset to non-finished samples
 # doneids <- gsub(pattern = "_infsites_violations.rds", replacement = "", x = list.files(path = OUTDIR, pattern = ".rds$"))
 # rslurmdf <- rslurmdf[which(!rslurmdf$sampleid %in% doneids), , drop = F]
 
-bialsummary <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_summary.txt", as.is = T, sep = " ")$sampleid
-alsummary <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits.txt", as.is = T, sep = " ")$sampleid
-
-rslurmdf <- data.frame(sampleid = union(bialsummary, alsummary))
+bialsummary <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_summary.txt", as.is = T)$sampleid
+alsummary <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits_v2.txt", as.is = T)$sampleid
+# 
+rslurmdf <- data.frame(sampleid = union(bialsummary, alsummary), stringsAsFactors = F)
 
 # failed samples
-rslurmdf <- data.frame(sampleid = c("2df02f2b-9f1c-4249-b3b4-b03079cd97d9","14c5b81d-da49-4db1-9834-77711c2b1d38",
-                       "93ff786e-0165-4b02-8d27-806d422e93fc","8853cbee-7931-49a6-b063-a806943a10ad","bcf858fd-cc3b-4fde-ab10-eb96216f4366",
-                       "6ca5c1bb-275b-4d05-948a-3c6c7d03fab9"), stringsAsFactors = F)
+# rslurmdf <- data.frame(sampleid = c("60413de1-6cd2-4f74-8180-3bdd394d6d16", "1d4a091d-fe65-49c0-8810-5a95243b108a", "2df02f2b-9f1c-4249-b3b4-b03079cd97d9","14c5b81d-da49-4db1-9834-77711c2b1d38",
+#                        "93ff786e-0165-4b02-8d27-806d422e93fc", "04aa6b77-8074-480c-872e-a1a47afa5314", "8853cbee-7931-49a6-b063-a806943a10ad","bcf858fd-cc3b-4fde-ab10-eb96216f4366",
+#                        "6ca5c1bb-275b-4d05-948a-3c6c7d03fab9"), stringsAsFactors = F)
 ### load reference table:
 reftable <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isavioltypes_reffile.txt", as.is = T)
 
@@ -453,7 +464,7 @@ reftable <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_
 # sampleid <- "fc876f5c-8339-bc9c-e040-11ac0d485160"
 # sampleid <- "7cae6c0b-36fe-411b-bbba-093a4c846d84"
 # sampleid <- "0332b017-17d5-4083-8fc4-9d6f8fdbbbde"
-# sampleid <- "5dbf3203-ce73-41e4-bf9a-32fc856f73f5"
+# sampleid <- "804ffa2e-158b-447d-945c-707684134c87"
 # # 
 # # 
 # debug(generate_isa_breakdown_file)
@@ -478,15 +489,15 @@ reftable <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_
 generate_isa_breakdown_file_slurmwrap <- function(sampleid) {
   estisaviolations <- generate_isa_breakdown_file(sampleid = sampleid, outdir = OUTDIR, snvindeldir = SNVMNVINDELDIR, cndir = CNDIR, nsims = NSIMS,
                                                   ncores = NCORES, callablegenome = callablegenome, trinucs = trinucs, trinucsprior = trinucsprior,
-                                                  reftable = reftable, cnsubset = "dipl", effgenomefrac = 1)
+                                                  reftable = reftable, cnsubset = "het", effgenomefrac = c(0.1))
   return(NULL)
 }
 
 # options(warn = 2)
-# generate_isa_breakdown_file_slurmwrap(sampleid = "2df02f2b-9f1c-4249-b3b4-b03079cd97d9")
+# generate_isa_breakdown_file_slurmwrap(sampleid = rslurmdf[1,])
 
 #
-isajob <- slurm_apply(f = generate_isa_breakdown_file_slurmwrap, params = rslurmdf[,,drop=F], jobname = "isajob8", nodes = 6, cpus_per_node = 1, add_objects = ls(),
+isajob <- slurm_apply(f = generate_isa_breakdown_file_slurmwrap, params = rslurmdf[,,drop=F], jobname = "isajob15", nodes = 358, cpus_per_node = 1, add_objects = ls(),
                           pkgs = rev(.packages()), libPaths = .libPaths(), submit = T, slurm_options = list(exclude = "fat-worker00[1-4]"))
 # 
 # 

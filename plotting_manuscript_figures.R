@@ -68,7 +68,8 @@ read_histology <- function(histologyfile, melafile = "/srv/shared/vanloo/ICGC_an
 
 mutdf <- generate_isa_violation_df()
 
-simssimplif <- as.data.frame(do.call(rbind, mclapply(X = sims, FUN = function(x, fact) unlist(by(data = x[-9217, 3:8], INDICES = fact, FUN = colSums)), fact = mutdf$type)))
+### has been mod
+simssimplif <- as.data.frame(do.call(rbind, lapply(X = sims, FUN = function(x, fact) unlist(by(data = rowSums(x[-9217, c(4,7)]), INDICES = fact, FUN = sum)), fact = mutdf$type)))
 simssimplif$sampleid <- gsub(pattern = "_infsites_backfwd_allelic.txt", replacement = "", x = basename(simfiles))
 simssimplif <- simssimplif[, grep(pattern = "^empty", x = colnames(simssimplif), invert = T)]
 
@@ -104,8 +105,64 @@ ggsave(filename = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinit
 
 
 
+##### revisit of Fig 1b
+library(ggplot2)
+library(reshape2)
+
+source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/kataegis/code_kataegis/pcawg.colour.palette.R")
+
+INDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isabreakdown_het_only_writefrac/"
+i1files <- list.files(path = INDIR, pattern = "_infsites_permut_effgenfrac1.txt", full.names = T, recursive = T)
+
+SUMTABLE_WHOLE <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/results/summary_table_combined_annotations_v2_JD.txt"
+sumtable_whole <- read.delim(file = SUMTABLE_WHOLE, as.is = T)
+
+i1samples <- sub(pattern = "_infsites_permut_effgenfrac1.txt", replacement = "", x = basename(i1files))
+i1df <- as.data.frame(do.call(rbind, lapply(X = i1files, FUN = function(x) read.delim(file = x, as.is = T)$counts_tot/1000)))
+# i1df$sampleid <- i1samples
+
+reftable <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isavioltypes_reffile.txt", as.is = T)
+
+i1df <- as.data.frame(t(apply(X = i1df, MARGIN = 1, FUN = function(x, f) by(data = x, INDICES = f, FUN = sum), f = reftable$type)))
+i1df$sampleid <- i1samples
+
+i1df$totviol <- rowSums(i1df[, 1:4])
+i1df$logtotviol <- log10(i1df$totviol)
+i1df$backfrac <- i1df$back/i1df$totviol*i1df$logtotviol
+i1df$forwarfrac <- i1df$forward/i1df$totviol*i1df$logtotviol
+i1df$parfrac <- i1df$parallel/i1df$totviol*i1df$logtotviol
+i1df$thirdfrac <- i1df$third_allele/i1df$totviol*i1df$logtotviol
+
+i1df$histology_abbreviation <- sumtable_whole[match(x = i1df$sampleid, table = sumtable_whole$samplename), "histology_abbreviation"]
+i1df$mutload <- rowSums(sumtable_whole[match(x = i1df$sampleid, table = sumtable_whole$samplename), c("num_clonal", "num_subclonal")])
+i1df <- i1df[i1df$totviol >= 1, ]
+i1df$sampleid <- factor(i1df$sampleid, levels = i1df[order(i1df$mutload, decreasing = T), "sampleid"])
+
+cvect <- pcawg.colour.palette(x = tolower(sub(pattern = "-", replacement = ".", x = unique(i1df$histology_abbreviation))), scheme = "tumour.subtype")
+names(cvect) <- unique(i1df$histology_abbreviation)
+
+plotdf <- melt(data = i1df[, c("sampleid", "histology_abbreviation", "backfrac", "forwarfrac", "parfrac", "thirdfrac")], id.vars = c("sampleid", "histology_abbreviation"))
+plotdf$variable <- factor(plotdf$variable, levels = c("parfrac", "thirdfrac", "forwarfrac", "backfrac"), labels = c("parallel", "third_allele", "forward", "back"))
+
+p1 <- ggplot(data = plotdf, mapping = aes(x = sampleid, y = value, fill = variable)) + geom_col()
+p1 <- p1 + geom_segment(mapping = aes(x = as.integer(sampleid)-.5, xend = as.integer(sampleid)+.5, y = -0.02, yend = -0.02, colour = histology_abbreviation), size = 1)
+p1 <- p1 + geom_text(mapping = aes(label = ifelse(sampleid %in% c("0ab4d782-9a50-48b9-96e4-6ce42b2ea034", 
+                                                                  "42d20028-0ddc-4dac-9f05-d674f8915f21",
+                                                                  "097a7d36-905b-72be-e050-11ac0d482c9a",
+                                                                  "f9dc999f-6dde-448d-9cf1-2897ddcf7b0b") & variable == "parallel", "*", ""), y = -0.1))
+p1 <- p1 + annotation_logticks(sides = "l") + scale_y_continuous(labels = scales::math_format(10^.x)) + scale_color_manual(values = cvect) + scale_fill_brewer(type = "qual", palette = "Pastel1") + theme_minimal()
+p1 <- p1 + theme(panel.grid.major.x = element_blank(), panel.grid.minor.y = element_blank(), axis.text.x = element_blank()) + labs(y = "# violations expected under uniform",x = "Samples")
+p1
+
+ggsave(filename = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/20190611_figure1b_new.pdf", plot = p1, width = 15, height = 6)
+
+
+# write.table(x = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/bf_pt_rate_estimates.txt", quote = F, row.names = F, sep = "\t")
+
+
+
 # figure 1c
-# take deb9f example
+# take 93ff example 
 source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/genecon/GC_utils.R")
 
 library(VariantAnnotation)
@@ -116,9 +173,9 @@ library(ggplot2)
 genomedf <- as.data.frame(seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
 genomedf$offset <- c(0, cumsum(as.numeric(genomedf$seqlengths))[-nrow(genomedf)])
 
-sampleid <- "deb9fbb6-656b-41ce-8299-554efc2379bd"
-sampleid <- "dd67dec6-35dd-4efe-b913-ed4884855365"
-# sampleid <- "2790b964-63e3-49aa-bf8c-9a00d3448c25"
+# sampleid <- "deb9fbb6-656b-41ce-8299-554efc2379bd"
+# sampleid <- "dd67dec6-35dd-4efe-b913-ed4884855365"
+sampleid <- "93ff786e-0165-4b02-8d27-806d422e93fc"
 
 SUMTABLE_WHOLE <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/results/summary_table_combined_annotations_v2_JD.txt"
 sumtable_whole <- read.delim(file = SUMTABLE_WHOLE, as.is = T)
@@ -135,8 +192,8 @@ psit <- sumtable_whole[sumtable_whole$samplename == sampleid, "ploidy"]
 psi <- 2*(1-rho)+psit*rho
 
 snvfile <- paste0("/srv/shared/vanloo/ICGC_snv_mnv/final_consensus_12oct_passonly/snv_mnv/", sampleid, ".consensus.20160830.somatic.snv_mnv.vcf.gz")
-segmentedvaffile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/results/20180529_hetSNPs+phasing_out/", sampleid, paste0(sampleid, "_baf_logr_summarised_segments.txt"))
-vafhitsfile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/results/20180529_hetSNPs+phasing_out/", sampleid, paste0(sampleid, "_baflogr_gc_results.txt"))
+segmentedvaffile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out_alphapt1_hetonly/", sampleid, paste0(sampleid, "_baf_logr_summarised_segments.txt"))
+vafhitsfile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out_alphapt1_hetonly/", sampleid, paste0(sampleid, "_snv_mnv_infSites_finalhits.txt"))
 
 if (!all(file.exists(snvfile, segmentedvaffile, vafhitsfile))) next
 
@@ -163,60 +220,76 @@ conscn[, c("startoffset", "endoffset")] <- genomedf[conscn$chromosome, "offset"]
 
 # read baf pipeline results
 vafhitsdf <- read.delim(file = vafhitsfile, as.is = T)
-vafhitsdf <- vafhitsdf[vafhitsdf$type == "snv" & vafhitsdf$padj < .05 & vafhitsdf$hetsnpneighbours > 0 & vafhitsdf$nsnphitsoutofrange/vafhitsdf$hetsnpneighbours < .1 & vafhitsdf$nlogrhits/vafhitsdf$nlogrneighbours < .1,  ]
+# vafhitsdf <- vafhitsdf[vafhitsdf$type == "snv" & vafhitsdf$padj < .05 & vafhitsdf$hetsnpneighbours > 0 & vafhitsdf$nsnphitsoutofrange/vafhitsdf$hetsnpneighbours < .1 & vafhitsdf$nlogrhits/vafhitsdf$nlogrneighbours < .1,  ]
 
 segmentedvaf$mcn <- (segmentedvaf$mu_baf*psi*2^segmentedvaf$mu_logr-(1-rho))/rho
 segmentedvaf$startoffset <- genomedf[as.character(seqnames(segmentedvaf)), "offset"] + start(segmentedvaf)
 segmentedvaf$endoffset <- genomedf[as.character(seqnames(segmentedvaf)), "offset"] + end(segmentedvaf)
 segmentedvafdf <- as.data.frame(segmentedvaf)
 
-snvsdf$outlier <- paste0(snvsdf$chr, "_", snvsdf$pos) %in% paste0(vafhitsdf$seqnames, "_", vafhitsdf$start)
+snvsdf$outlier <- paste0(snvsdf$chr, "_", snvsdf$pos) %in% paste0(vafhitsdf$chr, "_", vafhitsdf$start)
 snvsdf <- snvsdf[order(snvsdf$plotpos, decreasing = F),]
 
 
 
 ### identify example to show phasing
-phasinghitsfile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/results/20180529_hetSNPs+phasing_out/", sampleid, paste0(sampleid, "_paired_snv-snp_phased_converted.txt"))
-phasinghits <- read.delim(file = phasinghitsfile, as.is = T)
+# phasinghitsfile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20180529_hetSNPs+phasing_out/", sampleid, paste0(sampleid, "_paired_snv-snp_phased_converted.txt"))
+# phasinghits <- read.delim(file = phasinghitsfile, as.is = T)
 
-phasidxs1 <- paste0(phasinghits$chr, "_", phasinghits$pos1)
-phasidxs2 <- paste0(phasinghits$chr, "_", phasinghits$pos2)
+# phasidxs1 <- paste0(phasinghits$chr, "_", phasinghits$pos1)
+# phasidxs2 <- paste0(phasinghits$chr, "_", phasinghits$pos2)
 
-bafidxs <- paste0(snvsdf$chr, "_", snvsdf$pos)
+# bafidxs <- paste0(snvsdf$chr, "_", snvsdf$pos)
 
 # confirmedhits <- which(phasidxs1 %in% bafidxs | phasidxs2 %in% bafidxs)
-snvsdf$is_phased <- bafidxs %in% c(phasidxs1, phasidxs2)
+snvsdf$is_phased <- paste0(snvsdf$chr, "_", snvsdf$pos) %in% paste0(vafhitsdf$chr, "_", vafhitsdf$start)[vafhitsdf$is_confirmed]
 # phasinghits$is_phased <- phasinghits$block %in% phasinghits[confirmedhits, "block"]
 
 
-
-
-
-chroms <- as.character(1:22, "X", "Y")
+chroms <- as.character(6:10)
 
 p2 <- ggplot(data = snvsdf[!snvsdf$outlier & snvsdf$chr %in% chroms & runif(n = nrow(snvsdf)) < 1, ], mapping = aes(x = plotpos, y = mcn))
-p2 <- p2 + geom_point(colour = "grey90", shape = 20, alpha = .75, stroke = 0)
-# p2 <- p2 + geom_hex(binwidth = c(5e6, .05), alpha = .5)
+# p2 <- p2 + geom_point(colour = "grey90", shape = ".", alpha = .75, stroke = 0)
+p2 <- p2 + geom_hex(binwidth = c(3.7e6, .05), alpha = .25) + scale_fill_viridis_c(trans = "log10")
 # p2 <- p2 + stat_density_2d(aes(fill = ..density..), geom = "raster", contour = FALSE)
-p2 <- p2 + geom_segment(data = conscn[conscn$chromosome %in% chroms,], mapping= aes(x = startoffset, xend = endoffset, y = total_cn, yend = total_cn), colour = "#33a02c", size = 2.5,alpha = 1, position = position_nudge(y = 0.04))
-p2 <- p2 + geom_segment(data = conscn[conscn$chromosome %in% chroms,], mapping= aes(x = startoffset, xend = endoffset, y = major_cn, yend = major_cn), colour = "#b2df8a", size = 2.5, alpha = 1, position = position_nudge(y = -0.04))
-p2 <- p2 + geom_pointrange(data = snvsdf[snvsdf$outlier & !snvsdf$is_phased & snvsdf$chr %in% chroms, ], mapping = aes(ymin = mcnlo, ymax = mcnhi, y = mcn), colour = "#a6cee3", alpha = .9, stroke = 1)
-p2 <- p2 + geom_pointrange(data = snvsdf[snvsdf$outlier & snvsdf$is_phased & snvsdf$chr %in% chroms, ], mapping = aes(ymin = mcnlo, ymax = mcnhi, y = mcn), colour = "#1f78b4", alpha = .9, stroke = 1)
+p2 <- p2 + geom_segment(data = conscn[conscn$chromosome %in% chroms,], mapping= aes(x = startoffset, xend = endoffset, y = total_cn, yend = total_cn), colour = "#e34a33", size = 2.5,alpha = 1, position = position_nudge(y = 0.04))
+p2 <- p2 + geom_segment(data = conscn[conscn$chromosome %in% chroms,], mapping= aes(x = startoffset, xend = endoffset, y = major_cn, yend = major_cn), colour = "#fdbb84", size = 2.5, alpha = 1, position = position_nudge(y = -0.04))
+p2 <- p2 + geom_pointrange(data = snvsdf[snvsdf$outlier & !snvsdf$is_phased & snvsdf$chr %in% chroms, ], mapping = aes(ymin = mcnlo, ymax = mcnhi, y = mcn), colour = "#6baed6", alpha = .9, stroke = 1)
+p2 <- p2 + geom_pointrange(data = snvsdf[snvsdf$outlier & snvsdf$is_phased & snvsdf$chr %in% chroms, ], mapping = aes(ymin = mcnlo, ymax = mcnhi, y = mcn), colour = "#08519c", alpha = .9, stroke = 1)
 # p2 <- p2 + geom_segment(data = segmentedvafdf, mapping= aes(x = startoffset, xend = endoffset, y = mcn, yend = mcn), colour = "black")
 p2 <- p2 + geom_vline(xintercept = genomedf[2:25, "offset"], linetype = "dashed", alpha = .75)
-p2 <- p2 + scale_x_continuous(breaks = (genomedf$offset[1:5]+genomedf$offset[2:6])/2, labels = as.character(1:5))
+p2 <- p2 + scale_x_continuous(breaks = (genomedf$offset[1:5]+genomedf$offset[2:6])/2, labels = as.character(1:5), limits = c(0, 1062541961)) + labs(y = "Copy number", x = "Genomic position")
 # p2 <- p2 + scale_fill_distiller(palette= "Spectral", direction=-1) 
 p2 <- p2 + theme_minimal() + theme(panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(), panel.grid.minor.y = element_blank())+ylim(c(0,5))#+xlim(c(1e9,2e9)) # xlim(c(1.5e9,2e9))
 p2
 # & sample(x = rep(c(T,F), times = c(1e5,nrow(snvsdf)-1e5)))
-ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/", sampleid, "_bafpipelineplot.pdf"), plot = p2, width = 16, height = 5)
+ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/", sampleid, "_bafpipelineplot_hexbin.pdf"), plot = p2, width = 16, height = 5)
 
-ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/temp/", sampleid, "_bafpipelineplot.png"), plot = p2)
+# ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/temp/", sampleid, "_bafpipelineplot.png"), plot = p2)
 # }
 
 
 
-##### checking mtuation spectra
+
+### plot all precision recall numbers
+library(ggplot2)
+source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/kataegis/code_kataegis/pcawg.colour.palette.R")
+
+parsum <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits.txt", as.is = T)
+
+cvect <- pcawg.colour.palette(x = tolower(sub(pattern = "-", replacement = ".", x = unique(parsum$histology_abbreviation))), scheme = "tumour.subtype")
+names(cvect) <- unique(parsum$histology_abbreviation)
+
+p1 <- ggplot() + geom_point(data = parsum, mapping = aes(x = rec, y = prec, colour = histology_abbreviation, size = log10(nparallel)), position = position_jitter(width = .01, height = .01), alpha = .4)
+p1 <- p1 + theme_minimal() + coord_equal(xlim = c(0,1), ylim = c(0,1)) + scale_color_manual(values = cvect) + labs(x = "Recall", y = "Precision")
+p1 <- p1 + geom_text(data = data.frame(rec = weighted.mean(x = parsum$rec, w = parsum$nparallel), prec = weighted.mean(x = parsum$prec, w = parsum$nparallel)), mapping = aes(x = rec, y = prec, label = "X"), color = "red")
+p1
+
+ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/Parallel_Precision-Recall_plot.pdf"), plot = p1, width = 12, height = 9)
+
+
+
+##### checking mutation spectra
 
 source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/genecon/mutation_spectrum_analysis_functions_20181206.R")
 
@@ -237,4 +310,119 @@ plot_mutationspectrum(mutations = snvsdfsub, trinuc_freq = temp, sample = sample
 # plot_mutationspectrum(mutations = snvsdf, trinuc_freq = temp, sample = sampleid, bsgenome = BSgenome.Hsapiens.1000genomes.hs37d5, aspdf = T, outdir = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/", suffix = "squared", normalise = F)
 
 
+
+library(reshape2)
+
+######### final cosine similarity plots & Neff (obs/sim parallel in diploid)
+source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/kataegis/code_kataegis/pcawg.colour.palette.R")
+
+parsamplesdf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits_v2.txt", as.is = T)
+INDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isabreakdown_1plus1_only_writefrac/"
+i1files <- list.files(path = INDIR, pattern = "_infsites_totals_effgenfrac0.1.txt", full.names = T, recursive = T)
+
+i1samples <- sub(pattern = "_infsites_totals_effgenfrac0.1.txt", replacement = "", x = basename(i1files))
+i1df <- do.call(rbind, lapply(X = i1files, FUN = read.delim, as.is = T))
+i1df$sampleid <- rep(i1samples, rep(4, length(i1samples)))
+i1df <- reshape(data = i1df, direction = "wide", idvar = "sampleid", timevar = "type")
+
+parsamplesdfm <- merge(x = parsamplesdf, y = i1df, by = "sampleid", all.x = T, all.y = F)
+
+library(ggplot2)
+
+plotdf <- parsamplesdfm[order(parsamplesdfm$med_diploid, decreasing = T), ]
+plotdf$sampleid <- factor(x = plotdf$sampleid, levels = plotdf$sampleid)
+plotdf <- plotdf[which(plotdf$tot_diploid/plotdf$tot_testable > .10 & plotdf$freq_med.parallel >= 10), ]
+plotdf$neff <- plotdf$med_diploid/(plotdf$freq_med.parallel/10)
+
+cvect <- pcawg.colour.palette(x = tolower(sub(pattern = "-", replacement = ".", x = unique(plotdf$histology_abbreviation))), scheme = "tumour.subtype")
+names(cvect) <- unique(plotdf$histology_abbreviation)
+# cvect[c("Skin-Melanoma-Acral", "Skin-Melanoma-Cut", "Kidney-RCC-Clear", "Kidney-RCC-Pap")] <- c("#000000", "#000000", '#FF4500', '#FF4500')
+
+exp(weighted.mean(x = log(plotdf$neff), w = ((plotdf$upper_diploid-plotdf$lower_diploid)/(plotdf$freq_med.parallel/10))^-1, na.rm = T))
+
+p1 <- ggplot(data = plotdf, mapping = aes(x = sampleid, y = med_diploid/(freq_med.parallel/10), colour = histology_abbreviation)) + 
+  geom_pointrange(mapping = aes(ymax = upper_diploid/(freq_med.parallel/10), ymin = lower_diploid/(freq_med.parallel/10)), show.legend = F) + scale_y_log10() + annotation_logticks(sides = "l")
+p1 <- p1 + geom_hline(yintercept = exp(weighted.mean(x = log(plotdf$neff), w = ((plotdf$upper_diploid-plotdf$lower_diploid)/(plotdf$freq_med.parallel/10))^-1, na.rm = T)), alpha =.5, color = "red", linetype = "dashed")
+p1 <- p1 + scale_color_manual(values = cvect)
+p1 <- p1 + theme_minimal() + labs(y = "# parallel violations estimated / simulated", x = "samples") + theme(axis.text.x = element_blank(), panel.grid.major.x = element_blank(), panel.grid.minor.y = element_blank())
+p1
+
+ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/nparobs_over_sim_Neff.pdf"), plot = p1, width = 8, height = 5, useDingbats=FALSE)
+
+
+
+####### add in cosine similarities parallel
+source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/kataegis/code_kataegis/pcawg.colour.palette.R")
+
+parsamplesdf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits.txt", as.is = T)
+INDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out_alphapt1_hetonly/"
+i1files <- list.files(path = INDIR, pattern = "_parallel_thirdallele_cosinesims_het.txt", full.names = T, recursive = T)
+
+i1samples <- sub(pattern = "_parallel_thirdallele_cosinesims_het.txt", replacement = "", x = basename(i1files))
+i1df <- do.call(rbind, lapply(X = i1files, FUN = read.delim, as.is = T))
+i1df$sampleid <- rep(i1samples, rep(4, length(i1samples)))
+i1df <- reshape(data = i1df[i1df$type == "parallel", ], direction = "wide", idvar = "sampleid", timevar = "comparison")
+
+parsamplesdfm <- merge(x = parsamplesdf, y = i1df, all.x = T, all.y = F)
+parsamplesdfm <- parsamplesdfm[parsamplesdfm$nparallel >= 50, ]
+parsamplesdfm$sampleid <- factor(parsamplesdfm$sampleid, levels = parsamplesdfm$sampleid[order(parsamplesdfm$nparallel, decreasing = T)])
+parsamplesdfm$is_signif <- parsamplesdfm$cosine_hi.all < parsamplesdfm$cosine_low.simulated | 
+  parsamplesdfm$cosine_hi.simulated < parsamplesdfm$cosine_low.all
+
+sum(parsamplesdfm$cosine_hi.all < parsamplesdfm$cosine_low.simulated)
+sum(parsamplesdfm$cosine_low.all > parsamplesdfm$cosine_hi.simulated)
+
+cvect <- pcawg.colour.palette(x = tolower(sub(pattern = "-", replacement = ".", x = unique(parsamplesdfm$histology_abbreviation))), scheme = "tumour.subtype")
+names(cvect) <- unique(parsamplesdfm$histology_abbreviation)
+
+p2 <- ggplot(data = parsamplesdfm, mapping = aes(x = as.integer(sampleid), y = cosine_med.simulated, color = histology_abbreviation)) + 
+  geom_pointrange(mapping = aes(ymin = cosine_low.simulated, ymax = cosine_hi.simulated, alpha = is_signif), show.legend = F)
+p2 <- p2 + geom_pointrange(mapping = aes(x = as.integer(sampleid) + .25, y = cosine_med.all, ymin = cosine_low.all, ymax = cosine_hi.all, alpha = is_signif), show.legend = F, shape = 17)
+p2 <- p2 + scale_color_manual(values = cvect) + coord_cartesian(clip = "on", ylim = c(0,1)) + scale_alpha_manual(values= c('TRUE' = .8, 'FALSE' = .2))
+p2 <- p2 + theme_minimal() + labs(y = "mutation spectrum cosine similarity", x = "samples") + theme(axis.text.x = element_blank(), panel.grid.major.x = element_blank(), panel.grid.minor.y = element_blank())
+p2
+
+ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/parallel_spectra_cosine_sims.pdf"), plot = p2, width = 12, height = 5, useDingbats=FALSE)
+
+
+####### add in cosine similarities third allele
+source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/kataegis/code_kataegis/pcawg.colour.palette.R")
+
+thirdsamplesdf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_summary.txt", as.is = T)
+# parsamplesdf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits.txt", as.is = T)
+INDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out_alphapt1_hetonly/"
+i1files <- list.files(path = INDIR, pattern = "_parallel_thirdallele_cosinesims_het.txt", full.names = T, recursive = T)
+
+i1samples <- sub(pattern = "_parallel_thirdallele_cosinesims_het.txt", replacement = "", x = basename(i1files))
+i1df <- do.call(rbind, lapply(X = i1files, FUN = read.delim, as.is = T))
+i1df$sampleid <- rep(i1samples, rep(4, length(i1samples)))
+i1df <- reshape(data = i1df[i1df$type == "third_allele", ], direction = "wide", idvar = "sampleid", timevar = "comparison")
+
+# SIMDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isabreakdown_1plus1_only_writefrac/"
+SIMDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isabreakdown_het_only_writefrac/"
+i1df$frac_snvs <- sapply(X = i1samples, FUN = function(x) read.delim(file = file.path(SIMDIR, x, paste0(x, "_generalstats_effgenfrac1.txt")), as.is = T, header = F)[4,2])
+
+thirdsamplesdfm <- merge(x = thirdsamplesdf, y = i1df, all.x = T, all.y = F)
+thirdsamplesdfm <- thirdsamplesdfm[which(thirdsamplesdfm$nbiallelics >= 10), ]
+# thirdsamplesdfm <- thirdsamplesdfm[which(thirdsamplesdfm$nbiallelics >= 5 & thirdsamplesdfm$frac_snvs > .01), ] # when using 1plus1 only
+thirdsamplesdfm$sampleid <- factor(thirdsamplesdfm$sampleid, levels = thirdsamplesdfm$sampleid[order(thirdsamplesdfm$nbiallelics, decreasing = T)])
+
+thirdsamplesdfm$is_signif <- thirdsamplesdfm$cosine_hi.all < thirdsamplesdfm$cosine_low.simulated | 
+  thirdsamplesdfm$cosine_hi.simulated < thirdsamplesdfm$cosine_low.all
+
+sum(thirdsamplesdfm$cosine_hi.all < thirdsamplesdfm$cosine_low.simulated, na.rm = T)
+sum(thirdsamplesdfm$cosine_low.all > thirdsamplesdfm$cosine_hi.simulated, na.rm = T)
+
+cvect <- pcawg.colour.palette(x = tolower(sub(pattern = "-", replacement = ".", x = unique(thirdsamplesdfm$histology_abbreviation))), scheme = "tumour.subtype")
+names(cvect) <- unique(thirdsamplesdfm$histology_abbreviation)
+
+p2 <- ggplot(data = thirdsamplesdfm, mapping = aes(x = as.integer(sampleid), y = cosine_med.simulated, color = histology_abbreviation)) +
+  geom_pointrange(mapping = aes(ymin = cosine_low.simulated, ymax = cosine_hi.simulated, alpha = is_signif), show.legend = F)
+p2 <- p2 + geom_pointrange(mapping = aes(x = as.integer(sampleid) + .25, y = cosine_med.all, ymin = cosine_low.all, ymax = cosine_hi.all, alpha = is_signif), show.legend = F, shape = 17)
+p2 <- p2 + scale_color_manual(values = cvect) + coord_cartesian(clip = "on", ylim = c(0,1)) + scale_alpha_manual(values= c('TRUE' = .8, 'FALSE' = .2))
+p2 <- p2 + theme_minimal() + labs(y = "mutation spectrum cosine similarity", x = "samples") + theme(axis.text.x = element_blank(), panel.grid.major.x = element_blank(), panel.grid.minor.y = element_blank())
+p2
+
+ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/thrid_allele_spectra_cosine_sims_het.pdf"), plot = p2, width = 12, height = 5, useDingbats=FALSE)
+# ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/thrid_allele_spectra_cosine_sims_1plus1_subsetCALLS.pdf"), plot = p2, width = 12, height = 5)
 

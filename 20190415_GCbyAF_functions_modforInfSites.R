@@ -806,9 +806,19 @@ call_parallel_violations <- function(sampleid, sampledir, phasingdir, nboot = 10
   # filter out variants where adjacent (het)SNPs do not behave (BAF/LogR) according to segment
   # filter out variants in the immune regions (as allele frequencies may be messed up)
   # also filter out sites which have ≥ 2 hetSNPs within 25bp window as they considerably bias the allelecounts when phased
+  vafhitsdf$bafpval_comb <- rep(1, nrow(vafhitsdf))
+  goodbafidxs <- which(!(is.na(vafhitsdf$bafpval_pre) | is.na(vafhitsdf$bafpval_post)))
+  vafhitsdf$bafpval_comb[goodbafidxs] <- apply(X = vafhitsdf[goodbafidxs, c("bafpval_pre", "bafpval_post")], MARGIN = 1, FUN = function(x) sumlog(p = x)$p)
+  
+  vafhitsdf$logrpval_comb <- rep(1, nrow(vafhitsdf))
+  goodlogridxs <- which(!(is.na(vafhitsdf$logrpval_pre) | is.na(vafhitsdf$logrpval_post)))
+  vafhitsdf$logrpval_comb[goodlogridxs] <- apply(X = vafhitsdf[goodlogridxs, c("logrpval_pre", "logrpval_post")], MARGIN = 1, FUN = function(x) sumlog(p = x)$p)
+  
   vafhitsdf_clean <- vafhitsdf[which(!is.na(vafhitsdf$pval) & vafhitsdf$minor_cn > 0 &
                                        pmin(vafhitsdf$bafpval_pre, vafhitsdf$bafpval_post) > 1e-3 &
+                                       vafhitsdf$bafpval_comb > 1e-2 &
                                        pmin(vafhitsdf$logrpval_pre, vafhitsdf$logrpval_post) > 1e-3 &
+                                       vafhitsdf$logrpval_comb > 1e-2 &
                                        !vafhitsdf$immune_locus &
                                        vafhitsdf$nhetsnps25bp < 2), ]
 

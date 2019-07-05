@@ -13,6 +13,7 @@ library(ROCR)
 library(boot)
 library(VariantAnnotation)
 library(rslurm)
+library(metap)
 
 
 # genome
@@ -190,7 +191,7 @@ colnames(rslurmdf) <- "sampleid"
 # debug(annotate_gc_hits)
 # debug(call_parallel_violations)
 # run_baflogr_pipeline(sampleid = rslurmdf[4,])
-# run_baflogr_pipeline(sampleid = sampleid)
+# run_baflogr_pipeline(sampleid = "3e7ccab5-5b1d-4147-b907-77cab8f0837e")
 # baflogrjob <- slurm_apply(f = run_baflogr_pipeline, params = rslurmdf[,, drop = F], jobname = "baflogr_run5", nodes = 463, cpus_per_node = 6, add_objects = ls(),
 #                           pkgs = rev(.packages()), libPaths = .libPaths(), slurm_options = list(), submit = T)
 

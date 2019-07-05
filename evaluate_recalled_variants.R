@@ -2,6 +2,7 @@
 
 
 library(VariantAnnotation)
+# library(GenomicRanges)
 library(parallel)
 library(BSgenome.Hsapiens.1000genomes.hs37d5)
 library(ggplot2)
@@ -41,6 +42,14 @@ get_caller_stats <- function(sampleid) {
     snvs_biallelic <- snvs_biallelic[is_clean_biallelic]
   }
   
+  # annotate biallelics with allele-specific CN
+  cn_pcawg <- GRanges(read.delim(file = paste0("/srv/shared/vanloo/ICGC_consensus_copynumber/20170119_release/", sampleid, ".consensus.20170119.somatic.cna.annotated.txt"), as.is = T)[, 1:10], seqinfo = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
+  snvs_biallelic_df <- as.data.frame(rowRanges(snvs_biallelic))
+  snvs_biallelic_df$alt1 <- as.character(DNAStringSet(sapply(X = snvs_biallelic_df$ALT, FUN = function(g) g[[1]])))
+  snvs_biallelic_df$alt2 <- as.character(DNAStringSet(sapply(X = snvs_biallelic_df$ALT, FUN = function(g) g[[2]])))
+  snvs_biallelic_df <- snvs_biallelic_df[, -8]
+  snvs_biallelic_df[, c("total_cn", "major_cn", "minor_cn")] <- as.data.frame(mcols(cn_pcawg)[nearest(x = snvs_biallelic, subject = cn_pcawg), c("total_cn", "major_cn", "minor_cn")])
+  
   # general stats
   ninboth <- sum(overlapsAny(query = snvs, subject = snvs_pcawg, type = "equal"))
   outv <- c(onlym2 = length(snvs) - ninboth,
@@ -48,22 +57,26 @@ get_caller_stats <- function(sampleid) {
             onlycons = length(snvs_pcawg) - ninboth,
             nbiallelics = length(snvs_biallelic))
 
-  return(list(outv = outv, snvs_biallelic = snvs_biallelic))
+  return(list(outv = outv, snvs_biallelic = snvs_biallelic_df))
 }
 
 # debug(get_caller_stats)
-# lapply(X = recalledsamples[1], FUN = get_caller_stats)
+# callerstats_all <- lapply(X = recalledsamples[1:4], FUN = get_caller_stats)
 callerstats_all <- mclapply(X = recalledsamples, FUN = get_caller_stats, mc.cores = 20, mc.preschedule = F)
 
-callervariants <- do.call(rbind, lapply(callerstats_all, FUN = function(x) {
-  y <- as.data.frame(rowRanges(x$snvs_biallelic))
-  y$alt1 <- as.character(DNAStringSet(sapply(X = y$ALT, FUN = function(g) g[[1]])))
-  y$alt2 <- as.character(DNAStringSet(sapply(X = y$ALT, FUN = function(g) g[[2]])))
-  y <- y[, -8]
-  return(y)
-  }))
+# callervariants <- do.call(rbind, lapply(callerstats_all, FUN = function(x) {
+#   y <- as.data.frame(rowRanges(x$snvs_biallelic))
+#   y$alt1 <- as.character(DNAStringSet(sapply(X = y$ALT, FUN = function(g) g[[1]])))
+#   y$alt2 <- as.character(DNAStringSet(sapply(X = y$ALT, FUN = function(g) g[[2]])))
+#   y <- y[, -8]
+#   return(y)
+#   }))
 
-callervariants$sampleid <- rep(recalledsamples, sapply(callerstats_all, FUN = function(x) length(x$snvs_biallelic)))
+callervariants <- do.call(rbind, lapply(callerstats_all, FUN = function(x) {
+  x$snvs_biallelic
+}))
+
+callervariants$sampleid <- rep(recalledsamples, sapply(callerstats_all, FUN = function(x) nrow(x$snvs_biallelic)))
 write.table(x = callervariants, file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_variants.txt", sep = "\t", quote = F, col.names = T, row.names = F)
 
 
@@ -108,9 +121,11 @@ ggsave(plot = p2, filename = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_I
 
 
 p2 <- ggplot(data = callerstats, mapping = aes(x = rank, y = both+onlycons, colour = histology_abbreviation)) + geom_point(alpha = .8, show.legend = F, shape = 20) + scale_y_log10()
-p2 <- p2 + geom_point(mapping = aes(y = nbiallelics), alpha = .8, show.legend = F, shape = 20) + scale_color_manual(values = cvect)
+p2 <- p2 + geom_point(mapping = aes(y = nbiallelics), alpha = .8, show.legend = F, shape = 17) + scale_color_manual(values = cvect)
 p2 <- p2 + theme_minimal() + theme(panel.grid.minor = element_blank()) + annotation_logticks(sides = "l", base = 10) + labs(y = "# consensus SNVs")
 p2
+ggsave(plot = p2, filename = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/Mutect2Valid_ML_plusThirds.pdf", width = 9, height = 2)
+
 
 write.table(x = callerstats, file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_summary.txt", quote = F, col.names = T, row.names = F)
 
