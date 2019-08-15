@@ -19,6 +19,7 @@ get_caller_stats <- function(sampleid) {
   
   print(paste0(sampleid))
   
+  # read the new calls, subset to standard chroms, PASS variant and remove deletions
   vcffilepath <- list.files(path = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/data/pcawg_recall/", pattern = paste0(sampleid, "_tumor_mutect2_snvs_indels_twicefiltered.vcf.gz$"), full.names = T, recursive = T)
   snvs <- readVcf(file = vcffilepath, genome = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
   snvs <- snvs[seqnames(snvs) %in% c(1:22, "X", "Y") & rowRanges(snvs)$FILTER == "PASS" & nchar(ref(snvs)) == 1]
@@ -26,12 +27,14 @@ get_caller_stats <- function(sampleid) {
   # set aside biallelics
   snvs_biallelic <- snvs[which(lengths(alt(snvs)) == 2)]
   
+  # remove insertions
   snvs <- snvs[lengths(alt(snvs)) == 1]
   snvs <- snvs[unlist(nchar(alt(snvs))) == 1]
   
+  # read PCAWG calls
   snvs_pcawg <- readVcf(file = paste0("/srv/shared/vanloo/ICGC_snv_mnv/final_consensus_12oct_passonly/snv_mnv/", sampleid, ".consensus.20160830.somatic.snv_mnv.vcf.gz"), genome = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
 
-  # only SNVs
+  # only SNVs (i.e. clean up biallelics for single base subs, with no hint of germline)
   if (length(snvs_biallelic) > 0) {
     if (!is.null(info(snvs_biallelic)$P_GERMLINE)) {
       is_clean_biallelic <- which(sapply(X = alt(snvs_biallelic), FUN = function(x) all(x %in% c("A", "C", "G", "T"))) &
@@ -50,19 +53,32 @@ get_caller_stats <- function(sampleid) {
   snvs_biallelic_df <- snvs_biallelic_df[, -8]
   snvs_biallelic_df[, c("total_cn", "major_cn", "minor_cn")] <- as.data.frame(mcols(cn_pcawg)[nearest(x = snvs_biallelic, subject = cn_pcawg), c("total_cn", "major_cn", "minor_cn")])
   
-  # general stats
-  ninboth <- sum(overlapsAny(query = snvs, subject = snvs_pcawg, type = "equal"))
-  outv <- c(onlym2 = length(snvs) - ninboth,
-            both = ninboth,
-            onlycons = length(snvs_pcawg) - ninboth,
-            nbiallelics = length(snvs_biallelic))
+  # annotate which allele called in PCAWG
+  snvs_biallelic_df$in_PCAWG <- rep("", nrow(snvs_biallelic_df))
+  matchidxs <- match(x = snvs_biallelic_df$start, table = start(snvs_pcawg))
+  if (any(!is.na(matchidxs))) {
+    snvs_biallelic_df[which(!is.na(matchidxs)), "in_PCAWG"] <- as.character(unlist(alt(snvs_pcawg))[matchidxs[!is.na(matchidxs)]])
+  }
 
+  # general stats
+  # ninboth <- sum(overlapsAny(query = snvs, subject = snvs_pcawg, type = "equal")) + sum(snvs_biallelic_df$in_PCAWG != "")
+  # outv <- c(onlym2 = length(snvs) - ninboth + 2*sum(snvs_biallelic_df$in_PCAWG == "") + sum(snvs_biallelic_df$in_PCAWG != ""),
+  #           both = ninboth,
+  #           onlycons = length(snvs_pcawg) - ninboth,
+  #           nbiallelics = length(snvs_biallelic))
+
+  ninboth <- sum(overlapsAny(query = snvs, subject = snvs_pcawg, type = "equal"))
+  outv <- c(onlym2 = length(snvs) - ninboth + 2*sum(snvs_biallelic_df$in_PCAWG == "") + sum(snvs_biallelic_df$in_PCAWG != ""),
+            both = ninboth + sum(snvs_biallelic_df$in_PCAWG != ""),
+            onlycons = length(snvs_pcawg) - ninboth - sum(snvs_biallelic_df$in_PCAWG != ""),
+            nbiallelics = length(snvs_biallelic))
+  
   return(list(outv = outv, snvs_biallelic = snvs_biallelic_df))
 }
 
-# debug(get_caller_stats)
-# callerstats_all <- lapply(X = recalledsamples[1:4], FUN = get_caller_stats)
-callerstats_all <- mclapply(X = recalledsamples, FUN = get_caller_stats, mc.cores = 20, mc.preschedule = F)
+# undebug(get_caller_stats)
+# callerstats_all2 <- lapply(X = recalledsamples[16], FUN = get_caller_stats)
+callerstats_all <- mclapply(X = recalledsamples, FUN = get_caller_stats, mc.cores = 16, mc.preschedule = F)
 
 # callervariants <- do.call(rbind, lapply(callerstats_all, FUN = function(x) {
 #   y <- as.data.frame(rowRanges(x$snvs_biallelic))
@@ -127,5 +143,19 @@ p2
 ggsave(plot = p2, filename = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/Mutect2Valid_ML_plusThirds.pdf", width = 9, height = 2)
 
 
-write.table(x = callerstats, file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_summary.txt", quote = F, col.names = T, row.names = F)
+write.table(x = callerstats, file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_summary.txt", quote = F, col.names = T, row.names = F, sep = "\t")
 
+
+quantile(callerstats$both/(callerstats$both+callerstats$onlycons), probs = c(.025, .5, .975))
+quantile(callerstats$onlym2/(callerstats$both+callerstats$onlycons), probs = c(.025, .5, .975))
+quantile(2*callerstats$nbiallelics/(callerstats$onlym2+callerstats$both), probs = c(.025, .5, .975))
+quantile(2*callerstats$nbiallelics/(callerstats$onlym2+callerstats$both), probs = c(.025, .5, .975))
+
+nnewalleles <- c(by(data = callervariants$in_PCAWG, INDICES = callervariants$sampleid, FUN = function(x) sum(x != "")+ 2*sum(x == "")))
+fracnewalleles <- nnewalleles[callerstats$sampleid]/callerstats$onlym2
+fracnewalleles[is.na(fracnewalleles)] <- 0
+quantile(fracnewalleles, probs = c(.025, .5, .975))*100
+
+sum(callervariants$in_PCAWG != "")/nrow(callervariants)
+
+sum(callervariants$in_PCAWG != "")+ 2*sum(callervariants$in_PCAWG == "")

@@ -807,11 +807,11 @@ call_parallel_violations <- function(sampleid, sampledir, phasingdir, nboot = 10
   # filter out variants in the immune regions (as allele frequencies may be messed up)
   # also filter out sites which have ≥ 2 hetSNPs within 25bp window as they considerably bias the allelecounts when phased
   vafhitsdf$bafpval_comb <- rep(1, nrow(vafhitsdf))
-  goodbafidxs <- which(!(is.na(vafhitsdf$bafpval_pre) | is.na(vafhitsdf$bafpval_post)))
+  goodbafidxs <- which(vafhitsdf$bafpval_pre > .Machine$double.eps & vafhitsdf$bafpval_post > .Machine$double.eps)
   vafhitsdf$bafpval_comb[goodbafidxs] <- apply(X = vafhitsdf[goodbafidxs, c("bafpval_pre", "bafpval_post")], MARGIN = 1, FUN = function(x) sumlog(p = x)$p)
   
   vafhitsdf$logrpval_comb <- rep(1, nrow(vafhitsdf))
-  goodlogridxs <- which(!(is.na(vafhitsdf$logrpval_pre) | is.na(vafhitsdf$logrpval_post)))
+  goodlogridxs <- which(vafhitsdf$logrpval_pre > .Machine$double.eps & vafhitsdf$logrpval_post > .Machine$double.eps)
   vafhitsdf$logrpval_comb[goodlogridxs] <- apply(X = vafhitsdf[goodlogridxs, c("logrpval_pre", "logrpval_post")], MARGIN = 1, FUN = function(x) sumlog(p = x)$p)
   
   vafhitsdf_clean <- vafhitsdf[which(!is.na(vafhitsdf$pval) & vafhitsdf$minor_cn > 0 &
@@ -825,6 +825,7 @@ call_parallel_violations <- function(sampleid, sampledir, phasingdir, nboot = 10
   #summary stats
   # par_phasing_conf <- sum(vafhitsroc$is_confirmed)
   # browser()
+  # note that only in 1+1 regions do we expect phasing and VAF pipeline to produce the exact same matches (except for low CCF subclonal second hits), still, push all in.
   perfmets_all <- get_metrics(vafhitsdf = vafhitsdf_clean, sampleid = sampleid, sampledir = sampledir, nboot = nboot, plotting = T, alpha = alpha)
   # perfmets_hetero <- get_metrics(vafhitsdf = vafhitsdf_clean, rocidxs = which(vafhitsdf_clean$is_phaseable & vafhitsdf_clean$minor_cn > 0), sampleid = sampleid, sampledir = sampledir, nboot = nboot)
   # perfmets_diploid <- get_metrics(vafhitsdf = vafhitsdf_clean, rocidxs = which(vafhitsdf_clean$is_phaseable & vafhitsdf_clean$major_cn == 1 & vafhitsdf_clean$minor_cn == 1), sampleid = sampleid, sampledir = sampledir, nboot = nboot)

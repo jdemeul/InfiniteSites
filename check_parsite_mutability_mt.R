@@ -10,6 +10,7 @@ library(parallel)
 # library(rslurm)
 # library(VGAM)
 library(ggplot2)
+library(ggrepel)
 
 # source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/genecon/mutation_spectrum_analysis_functions_20181206.R")
 # source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/genecon/GC_utils.R")
@@ -35,18 +36,17 @@ thirdhits <- GRanges(read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects
 thirdhits <- thirdhits[!seqnames(thirdhits) == "Y"]
 thirdhits <- thirdhits[thirdhits$sampleid %in% sampleids]
 
-thirdhitsforaddition <- granges(thirdhits)
-mcols(thirdhitsforaddition) <- DataFrame(alt = thirdhits$alt1,
-                                         trinuc = getSeq(resize(thirdhits, fix = "center", width = 3), x = BSgenome.Hsapiens.1000genomes.hs37d5),
-                                         ref = thirdhits$REF)
+# only add those loci which are NOT already in there (with same sample)
+thirdhitsforaddition <- granges(thirdhits, use.names = F, use.mcols = F)[thirdhits$in_PCAWG == ""]
+mcols(thirdhitsforaddition) <- DataFrame(trinuc = getSeq(resize(thirdhitsforaddition, fix = "center", width = 3), x = BSgenome.Hsapiens.1000genomes.hs37d5))
 # thirdhitsforaddition <- c(granges(thirdhits),granges(thirdhits))
 # mcols(thirdhitsforaddition) <- DataFrame(alt = c(thirdhits$alt1,thirdhits$alt2),
 #                                          trinuc = rep(getSeq(resize(thirdhits, fix = "center", width = 3), x = BSgenome.Hsapiens.1000genomes.hs37d5), 2),
 #                                          ref = rep(thirdhits$REF, 2))
-flipthirdidx <- which(thirdhitsforaddition$ref %in% c("A", "G"))
+flipthirdidx <- which(subseq(thirdhitsforaddition$trinuc, 2,2) %in% c("A", "G"))
 thirdhitsforaddition$trinuc[flipthirdidx] <- reverseComplement(thirdhitsforaddition$trinuc[flipthirdidx])
-thirdhitsforaddition$alt <- DNAStringSet(thirdhitsforaddition$alt)
-thirdhitsforaddition$alt[flipthirdidx] <- reverseComplement(thirdhitsforaddition$alt[flipthirdidx])
+# thirdhitsforaddition$alt <- DNAStringSet(thirdhitsforaddition$alt)
+# thirdhitsforaddition$alt[flipthirdidx] <- reverseComplement(thirdhitsforaddition$alt[flipthirdidx])
 
 
 driverhits <- read.delim(file = "/srv/shared/vanloo/ICGC_driver/TableS2_driver_point_mutations_annotation_20180110.txt", as.is = T)
@@ -64,17 +64,17 @@ get_snvs <- function(sampleid, snvsmnvdir) {
     snvs <- GRanges()
     snvs$alt <- character()
   } else {
-    snvs <- rowRanges(readVcf(file = snv_mnvfile, genome = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5)))
-    snvs <- snvs[lengths(mcols(snvs)$ALT) == 1 & lengths(mcols(snvs)$REF) == 1 & seqnames(snvs) != "Y"]
-    mcols(snvs) <- DataFrame(alt = as.character(unlist(snvs$ALT)))
+    snvs <- readVcf(file = snv_mnvfile, genome = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
+    snvs <- granges(rowRanges(snvs[lengths(alt(snvs)) == 1 & lengths(ref(snvs)) == 1 & seqnames(snvs) != "Y"]), use.names = F, use.mcols = F)
+    # mcols(snvs) <- DataFrame(alt = as.character(unlist(snvs$ALT)))
   }
   
   snvs$trinuc <- getSeq(resize(snvs, fix = "center", width = 3), x = BSgenome.Hsapiens.1000genomes.hs37d5)
-  snvs$ref <- subseq(snvs$trinuc, 2,2)
-  flipidx <- which(snvs$ref %in% c("A", "G"))
+  # snvs$ref <- subseq(snvs$trinuc, 2,2)
+  flipidx <- which(subseq(snvs$trinuc, 2,2) %in% c("A", "G"))
   snvs$trinuc[flipidx] <- reverseComplement(snvs$trinuc[flipidx])
-  snvs$alt <- DNAStringSet(snvs$alt)
-  snvs$alt[flipidx] <- reverseComplement(snvs$alt[flipidx])
+  # snvs$alt <- DNAStringSet(snvs$alt)
+  # snvs$alt[flipidx] <- reverseComplement(snvs$alt[flipidx])
   
   # snvs <- snvs[which(snvs$trinuc == "TCT")]
   
@@ -83,12 +83,12 @@ get_snvs <- function(sampleid, snvsmnvdir) {
 
 ### remove all driver muts to reduce influence of selection
 # debug(get_snvs)
-allsnvs <- unlist(GRangesList(mclapply(X = sampleids, FUN = get_snvs, snvsmnvdir = SNVMNVINDELDIR, mc.preschedule = T, mc.cores = 16)))
+allsnvs <- unlist(GRangesList(mclapply(X = sampleids, FUN = get_snvs, snvsmnvdir = SNVMNVINDELDIR, mc.preschedule = T, mc.cores = 10)))
 allsnvs <- c(allsnvs, thirdhitsforaddition)#[which(thirdhitsforaddition$trinuc == "TCT")])
 # allsnvs$trinucmut <- factor(paste0(allsnvs$trinuc, ">", allsnvs$alt))
 allsnvs <- subsetByOverlaps(x = allsnvs, ranges = driverhits, invert = T)
 
-# saveRDS(object = allsnvs, file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/data/mutability_check_allsnvs+bial.rds")
+saveRDS(object = allsnvs, file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/data/mutability_check_allsnvs+bial.rds")
 # allsnvs <- readRDS(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/data/mutability_check_allsnvs+bial.rds")
 
 # allsnvs$trinuc <- getSeq(resize(allsnvs, fix = "center", width = 3), x = BSgenome.Hsapiens.1000genomes.hs37d5)
@@ -135,7 +135,7 @@ matchidx <- paste0(outdf$trinuc, "_", outdf$hitcount)
 # set.seed(953755)
 # mc.reset.stream()
 
-replicdfs <- mclapply(X = 1:1000, FUN = function(x) get_bial_freq_strat(alloci = allsnvs_dedup_dfonly[sample(1:nrow(allsnvs_dedup_dfonly), replace = T), ]), mc.preschedule = T, mc.cores = 16)
+replicdfs <- mclapply(X = 1:100, FUN = function(x) get_bial_freq_strat(alloci = allsnvs_dedup_dfonly[sample(1:nrow(allsnvs_dedup_dfonly), replace = T), ]), mc.preschedule = T, mc.cores = 10)
 
 outdf <- cbind(outdf, t(apply(X = do.call(cbind, lapply(X = replicdfs, FUN = function(x, idxv) {
   y <- x[match(x = idxv, table = paste0(x[,1], "_", x[,2])), 3:4]
@@ -156,14 +156,15 @@ saveRDS(object = replicdfs, file = "/srv/shared/vanloo/home/jdemeul/projects/201
 # replicdf2 <- merge(x = replicdf, y = outdf, all = T)
 
 write.table(x = outdf, file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/mutation_rate_vs_mutability_bootstrapres.txt", quote = F, col.names = T, row.names = F, sep = "\t")
+# outdf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/mutation_rate_vs_mutability_bootstrapres.txt", as.is = T)
 
-plotdf <- outdf[outdf$nr_bi >= 5, ]
+plotdf <- outdf[outdf$nr_bi >= 5 & outdf$trinuc %in% outdf$trinuc[outdf$hitcount == 2 & outdf$nr_bi >= 5], ]
 textdf <- plotdf[!duplicated(plotdf$trinuc, fromLast = T), ]
 
 p1 <- ggplot(data = plotdf, mapping = aes(x = hitcount, colour = trinuc, fill = trinuc, y = nr_bi/(nr_mono+nr_bi))) + geom_path(alpha = .4) + geom_point()# + geom_pointrange(mapping = aes(ymin = ci_lo, ymax = ci_hi))
-p1 <- p1 + geom_ribbon(mapping = aes(ymin = ci_lo, ymax = ci_hi), colour = NA, alpha = .1) + scale_y_log10() + annotation_logticks(sides = "l") + coord_cartesian(xlim = c(0.75,9))
+p1 <- p1 + geom_ribbon(mapping = aes(ymin = ci_lo, ymax = ci_hi), colour = NA, alpha = .1) + scale_y_log10() + annotation_logticks(sides = "l") + coord_cartesian(xlim = c(0.75,7))
 p1 <- p1 + geom_text_repel(data = textdf, mapping = aes(label = trinuc), alpha = .75, nudge_x = .25, box.padding = 0, point.padding = 0, segment.colour = NA)
-p1 <- p1 + theme_minimal() + theme(panel.grid.minor.x = element_blank(), panel.grid.minor.y = element_blank(), legend.position = "none") + scale_x_continuous(breaks = 1:9)
+p1 <- p1 + theme_minimal() + theme(panel.grid.minor.x = element_blank(), panel.grid.minor.y = element_blank(), legend.position = "none") + scale_x_continuous(breaks = 1:7)
 p1 <- p1 + labs(x = "# SNVs at loci", y = "Frequency of biallelic hits at loci")
 p1
 

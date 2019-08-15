@@ -21,10 +21,10 @@ source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/ge
 SNVMNVINDELDIR <- "/srv/shared/vanloo/ICGC_snv_mnv/final_consensus_12oct_passonly/"
 RELEASETABLEFILE <- "/srv/shared/vanloo/ICGC_annotations/release_may2016.v1.4.tsv"
 SUMTABLE_WHOLE <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/results/summary_table_combined_annotations_v2_JD.txt"
-OUTDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isabreakdown_het_only_writefrac/"
+OUTDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isabreakdown_all_writefrac/"
 CNDIR <- "/srv/shared/vanloo/ICGC_consensus_copynumber/20170119_release/"
 
-NCORES <- 10
+NCORES <- 16
 NSIMS <- 1000
 
 
@@ -489,16 +489,19 @@ reftable <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_
 generate_isa_breakdown_file_slurmwrap <- function(sampleid) {
   estisaviolations <- generate_isa_breakdown_file(sampleid = sampleid, outdir = OUTDIR, snvindeldir = SNVMNVINDELDIR, cndir = CNDIR, nsims = NSIMS,
                                                   ncores = NCORES, callablegenome = callablegenome, trinucs = trinucs, trinucsprior = trinucsprior,
-                                                  reftable = reftable, cnsubset = "het", effgenomefrac = c(0.1))
+                                                  reftable = reftable, cnsubset = "all", effgenomefrac = c(1))
   return(NULL)
 }
 
 # options(warn = 2)
-# generate_isa_breakdown_file_slurmwrap(sampleid = rslurmdf[1,])
+for (smplid in c("10ad692b-4c3d-42de-9b5e-4968441388b3","154f80bd-984c-4792-bb89-20c4da0c08e0","2df02f2b-9f1c-4249-b3b4-b03079cd97d9",
+                 "8a929c55-35a6-4645-bb70-4b85d281b139","93ff786e-0165-4b02-8d27-806d422e93fc","b7f2e85a-3c6a-48b7-8a4f-2dec1d85359d")) {
+generate_isa_breakdown_file_slurmwrap(sampleid = smplid)
+}
 
 #
-isajob <- slurm_apply(f = generate_isa_breakdown_file_slurmwrap, params = rslurmdf[,,drop=F], jobname = "isajob15", nodes = 358, cpus_per_node = 1, add_objects = ls(),
-                          pkgs = rev(.packages()), libPaths = .libPaths(), submit = T, slurm_options = list(exclude = "fat-worker00[1-4]"))
+# isajob <- slurm_apply(f = generate_isa_breakdown_file_slurmwrap, params = rslurmdf[,,drop=F], jobname = "isajob15", nodes = 358, cpus_per_node = 1, add_objects = ls(),
+#                           pkgs = rev(.packages()), libPaths = .libPaths(), submit = T, slurm_options = list(exclude = "fat-worker00[1-4]"))
 # 
 # 
 
