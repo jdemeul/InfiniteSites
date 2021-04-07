@@ -32,8 +32,14 @@ histomerge <- read.delim(file = HISTORELMERGED, as.is = T)
 sampleids <- sumtab[sumtab$is_preferred, "samplename"]
 sampleids <- intersect(x = sampleids, y = histomerge[histomerge$donor_wgs_included_excluded == "Included", "tumor_wgs_aliquot_id"])
 
-parhits <- GRanges(read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_cleanhits_variants_v2.txt", as.is = T))
-thirdhits <- GRanges(read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_variants.txt", as.is = T))
+# OLD
+# parhits <- GRanges(read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_cleanhits_variants_v2.txt", as.is = T))
+# thirdhits <- GRanges(read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_variants.txt", as.is = T))
+# NEW
+parhits <- GRanges(read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_cleanhits_variants_v2_2021.txt", as.is = T))
+thirdhits <- GRanges(read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_variants_20210217.txt", as.is = T))
+
+
 thirdhits$alt <- thirdhits$alt1
 thirdhits$ref <- thirdhits$REF
 allhits <- c(parhits[, c("ref", "alt", "sampleid")], thirdhits[, c("ref", "alt", "sampleid")])
@@ -50,8 +56,20 @@ allhits$ref[flipparidx] <- reverseComplement(DNAStringSet(allhits$ref[flipparidx
 allhits$alt[flipparidx] <- reverseComplement(DNAStringSet(allhits$alt[flipparidx]))
 allhits$histology_abbreviation <- sumtab$histology_abbreviation[match(x = allhits$sampleid, table = sumtab$samplename)]
 
-# melahits <- allhits[allhits$histology_abbreviation == "Skin-Melanoma", ]
-melahits <- allhits[allhits$histology_abbreviation == "ColoRect-AdenoCA", ]
+for (ttype in c("Skin-Melanoma", "ColoRect-AdenoCA", "Eso-AdenoCA")) {
+  # ttype <- "Skin-Melanoma"
+if (ttype == "Eso-AdenoCA") {
+  melahits <- allhits[allhits$histology_abbreviation %in% c(ttype, "Stomach-AdenoCA"), ]
+} else {
+  melahits <- allhits[allhits$histology_abbreviation == ttype, ]
+}
+  
+# subset to samples with >= 10 biallelic events
+  casestolookat <- names(which(table(melahits$sampleid) > 10))
+  melahits <- melahits[melahits$sampleid %in% casestolookat, ]
+melahits$mut <- paste0(melahits$trinuc, ">", melahits$alt)
+# melahits <- allhits[allhits$histology_abbreviation == "ColoRect-AdenoCA", ]
+# melahits <- allhits[allhits$histology_abbreviation %in% c("Eso-AdenoCA", "Stomach-AdenoCA"), ]
 
 # View(as.data.frame(melahits)) # look for NFATC4 [TC]TTTC[CA][TA]
 # sum(grepl(pattern = "[TC]TTTC[CA][TA]", x = as.character(melahits$heptanuc)))
@@ -61,7 +79,7 @@ melahits <- allhits[allhits$histology_abbreviation == "ColoRect-AdenoCA", ]
 # get the set of unmatched sequences: same samples, read all variants and subsample loci which have same muts
 melahitids <- unique(melahits$sampleid)
 
-get_snvs <- function(sampleid, snvsmnvdir) {
+get_snvs <- function(sampleid, snvsmnvdir, bialsnvs, nsamples) {
   print(paste0("Loading snvs for sample ", sampleid))
   snv_mnvfile <- file.path(snvsmnvdir, pattern = paste0(sampleid, ".consensus.20160830.somatic.snv_mnv.vcf.gz"))
   
@@ -91,40 +109,53 @@ get_snvs <- function(sampleid, snvsmnvdir) {
   snvs$ALT[flipidx] <- reverseComplement(snvs$ALT[flipidx])
   # snvs <- snvs[which(snvs$trinuc == "TCT")]
   
-  return(snvs)
+  # do sampling here
+  tosamplemuts <- c(table(mcols(bialsnvs)[bialsnvs$sampleid == sampleid, "mut"]))*nsamples
+  snvs$mut <- paste0(snvs$trinuc, ">", snvs$ALT)
+  snvs <- snvs[(!overlapsAny(query = snvs, subject = bialsnvs, type = "equal")) & snvs$mut %in% names(tosamplemuts)]
+  snvsampled <- unlist(GRangesList(lapply(X = names(tosamplemuts), FUN = function(x, tosample, allsnvs) {
+    allsnvs[sample(x = which(allsnvs$mut == x), size = tosample[x], replace = T)]
+  }, allsnvs = snvs, tosample = tosamplemuts)))
+  
+  return(snvsampled)
 }
 
 # debug(get_snvs)
-# samplesnvs <- get_snvs(sampleid = melahitids[6], snvsmnvdir = SNVMNVINDELDIR)
-samplesnvs <- do.call(c, mclapply(X = melahitids, FUN = get_snvs, snvsmnvdir = SNVMNVINDELDIR, mc.preschedule = T, mc.cores = 16))
-samplesnvs <- samplesnvs[!overlapsAny(query = samplesnvs, drop.self = T)]
-samplesnvs <- subsetByOverlaps(x = samplesnvs, ranges = melahits, type = "equal", invert = T)
-samplesnvs$mut <- paste0(samplesnvs$trinuc, ">", samplesnvs$ALT)
+# samplesnvs <- get_snvs(sampleid = melahitids[6], snvsmnvdir = SNVMNVINDELDIR, bialsnvs = melahits, nsamples = 10)
 
-melahits$mut <- paste0(melahits$trinuc, ">", melahits$alt)
+# samplesnvs <- lapply(X = melahitids, FUN = get_snvs, snvsmnvdir = SNVMNVINDELDIR)
+samplesnvs <- do.call(c, mclapply(X = melahitids, FUN = get_snvs, snvsmnvdir = SNVMNVINDELDIR, bialsnvs = melahits, nsamples = 10, mc.preschedule = T, mc.cores = 5))
+# samplesnvs <- samplesnvs[!overlapsAny(query = samplesnvs, drop.self = T)]
+# samplesnvs <- subsetByOverlaps(x = samplesnvs, ranges = melahits, type = "equal", invert = T)
+# samplesnvs$mut <- paste0(samplesnvs$trinuc, ">", samplesnvs$ALT)
 
-#### COLORECT: try subsetting to specific mut type (along lines of SBS10a: REF = C vs SBS28: REF = T) 
-# melahitsbak <- melahits
+
+
+#### COLORECT: try subsetting to specific mut type (along lines of SBS10a: REF = C vs SBS28: REF = T): 10a C>A, 10b C>T, 28 T>G
+melahitsbak <- melahits
 # melahits <- melahitsbak
 # melahits <- melahits[melahits$ref == "C" & melahits$alt == "T"]
 
 
 # freqtab <- c(table(factor(melahits$mut, levels = unique(samplesnvs$mut)))/table(factor(samplesnvs$mut, levels = unique(samplesnvs$mut))))
 # samplefreqtab <- c(table(factor(melahits$sampleid, levels = unique(samplesnvs$sampleid)))/table(factor(samplesnvs$sampleid, levels = unique(samplesnvs$sampleid))))
-normlevels <- unique(paste0(samplesnvs$mut, "_", samplesnvs$sampleid))
-normfact <- c(table(factor(paste0(melahits$mut, "_", melahits$sampleid), levels = normlevels))/table(factor(paste0(samplesnvs$mut, "_", samplesnvs$sampleid), levels = normlevels)))
-# freqtab <- freqtab/sum(freqtab)
-sampledsnvs <- samplesnvs[sample(x = 1:length(samplesnvs), size = 10*length(melahits), replace = T, prob = normfact[paste0(samplesnvs$mut, "_", samplesnvs$sampleid)]), ]
+# normlevels <- unique(paste0(samplesnvs$mut, "_", samplesnvs$sampleid))
+# normfact <- c(table(factor(paste0(melahits$mut, "_", melahits$sampleid), levels = normlevels))/table(factor(paste0(samplesnvs$mut, "_", samplesnvs$sampleid), levels = normlevels)))
+# # freqtab <- freqtab/sum(freqtab)
+# sampledsnvs <- samplesnvs[sample(x = 1:length(samplesnvs), size = 10*length(melahits), replace = T, prob = normfact[paste0(samplesnvs$mut, "_", samplesnvs$sampleid)]), ]
 
-ctrlseq <- sampledsnvs$heptanuc
+ctrlseq <- samplesnvs$heptanuc #[samplesnvs$REF == "C"]
 names(ctrlseq) <- paste0("ctrl", 1:length(ctrlseq))
-# writeXStringSet(x = ctrlseq, filepath = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/mela_ctrl_seqs.fasta", format="fasta")
-writeXStringSet(x = ctrlseq, filepath = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/colorect_ctrl_seqs_SBS28.fasta", format="fasta")
+writeXStringSet(x = ctrlseq, filepath = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/", ttype, "new_ctrl_seqs_over10.fasta"), format="fasta")
+# writeXStringSet(x = ctrlseq, filepath = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/colorect_ctrl_seqs.fasta", format="fasta")
+# writeXStringSet(x = ctrlseq, filepath = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/colorect_ctrl_seqs_SBS10b.fasta", format="fasta")
 
-melaseq <- melahits$heptanuc
+melaseq <- melahits$heptanuc #[melahits$ref == "C"]
 names(melaseq) <- paste0("motif", 1:length(melaseq))
-writeXStringSet(x = melaseq, filepath = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/colorect_seqs_SBS28.fasta", format="fasta")
-
+writeXStringSet(x = melaseq, filepath = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/", ttype, "_new_seqs_over10.fasta"), format="fasta")
+# writeXStringSet(x = melaseq, filepath = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/colorect_seqs.fasta", format="fasta")
+# writeXStringSet(x = melaseq, filepath = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/colorect_seqs_SBS10b.fasta", format="fasta")
+}
 
 
 ### for CRC

@@ -16,11 +16,12 @@ generate_bases_types_trinuc <- function() {
   # generate all bases/trinucleotides/mutation types + factors
   bases <- c("A", "C", "G", "T")
   types <- c("A", "G", "T", "A", "C", "G")
+  types2 <- c("C>A", "C>G", "C>T", "T>A", "T>C", "T>G")
   trinucleotides <- paste0(rep(rep(bases, rep(4,4)), 6),
                            rep(c("C", "T"), c(48, 48)),
                            rep(bases, 24))
   trinucleotides_mutations <- paste0(paste0(trinucleotides, ">", rep(types, rep(16,6))))
-  return(list(bases = bases, types = types, trinucleotides = trinucleotides,
+  return(list(bases = bases, types = types, types2 = types2, trinucleotides = trinucleotides,
               trinucleotides_mutations = trinucleotides_mutations))
 }
 
@@ -169,6 +170,7 @@ library(VariantAnnotation)
 library(GenomicRanges)
 library(BSgenome.Hsapiens.1000genomes.hs37d5)
 library(ggplot2)
+library(parallel)
 
 genomedf <- as.data.frame(seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
 genomedf$offset <- c(0, cumsum(as.numeric(genomedf$seqlengths))[-nrow(genomedf)])
@@ -176,6 +178,8 @@ genomedf$offset <- c(0, cumsum(as.numeric(genomedf$seqlengths))[-nrow(genomedf)]
 # sampleid <- "deb9fbb6-656b-41ce-8299-554efc2379bd"
 # sampleid <- "dd67dec6-35dd-4efe-b913-ed4884855365"
 sampleid <- "93ff786e-0165-4b02-8d27-806d422e93fc"
+sampleid <- "2df02f2b-9f1c-4249-b3b4-b03079cd97d9"
+sampleid <- "14c5b81d-da49-4db1-9834-77711c2b1d38"
 
 SUMTABLE_WHOLE <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/results/summary_table_combined_annotations_v2_JD.txt"
 sumtable_whole <- read.delim(file = SUMTABLE_WHOLE, as.is = T)
@@ -205,10 +209,14 @@ hitsobj <- findOverlaps(query = snvs, subject = segmentedvaf)
 any(duplicated(queryHits(hitsobj)))
 
 snvsdf <- data.frame(chr = seqnames(snvs), pos = start(snvs), ref = info(snvs)$t_ref_count, alt = info(snvs)$t_alt_count)[queryHits(hitsobj), ]
-snvsdf[, c("lower", "upper")] <- t(mapply(FUN = HDIofICDF,
+# snvsdf[, c("lower", "upper")] <- t(mapply(FUN = HDIofICDF,
+#                                           shape1 = snvsdf$alt + 1,
+#                                           shape2 = snvsdf$ref + 1,
+#                                           MoreArgs = list(ICDFname = qbeta, credMass = .95)))
+snvsdf[, c("lower", "upper")] <- t(mcmapply(FUN = HDIofICDF,
                                           shape1 = snvsdf$alt + 1,
                                           shape2 = snvsdf$ref + 1,
-                                          MoreArgs = list(ICDFname = qbeta, credMass = .95)))
+                                          MoreArgs = list(ICDFname = qbeta, credMass = .95), mc.preschedule = T, mc.cores = 12))
 snvsdf$vaf <- snvsdf$alt/(snvsdf$ref+snvsdf$alt)
 
 snvsdf[, c("mcnlo", "mcn", "mcnhi")] <- snvsdf[, c("lower", "vaf", "upper")]/rho*psi*2^mcols(segmentedvaf)[subjectHits(hitsobj), "mu_logr"]
@@ -246,7 +254,7 @@ snvsdf$is_phased <- paste0(snvsdf$chr, "_", snvsdf$pos) %in% paste0(vafhitsdf$ch
 # phasinghits$is_phased <- phasinghits$block %in% phasinghits[confirmedhits, "block"]
 
 
-chroms <- as.character(6:10)
+chroms <- as.character(1:22)
 
 p2 <- ggplot(data = snvsdf[!snvsdf$outlier & snvsdf$chr %in% chroms & runif(n = nrow(snvsdf)) < 1, ], mapping = aes(x = plotpos, y = mcn))
 # p2 <- p2 + geom_point(colour = "grey90", shape = ".", alpha = .75, stroke = 0)
@@ -258,12 +266,14 @@ p2 <- p2 + geom_pointrange(data = snvsdf[snvsdf$outlier & !snvsdf$is_phased & sn
 p2 <- p2 + geom_pointrange(data = snvsdf[snvsdf$outlier & snvsdf$is_phased & snvsdf$chr %in% chroms, ], mapping = aes(ymin = mcnlo, ymax = mcnhi, y = mcn), colour = "#08519c", alpha = .9, stroke = 1)
 # p2 <- p2 + geom_segment(data = segmentedvafdf, mapping= aes(x = startoffset, xend = endoffset, y = mcn, yend = mcn), colour = "black")
 p2 <- p2 + geom_vline(xintercept = genomedf[2:25, "offset"], linetype = "dashed", alpha = .75)
-p2 <- p2 + scale_x_continuous(breaks = (genomedf$offset[1:5]+genomedf$offset[2:6])/2, labels = as.character(1:5), limits = c(0, 1062541961)) + labs(y = "Copy number", x = "Genomic position")
+p2 <- p2 + scale_x_continuous(breaks = (genomedf$offset[1:22]+genomedf$offset[2:23])/2, labels = as.character(1:22)) + labs(y = "Copy number", x = "Genomic position")
+# p2 <- p2 + scale_x_continuous(breaks = (genomedf$offset[1:5]+genomedf$offset[2:6])/2, labels = as.character(1:5), limits = c(0, 1062541961)) + labs(y = "Copy number", x = "Genomic position")
 # p2 <- p2 + scale_fill_distiller(palette= "Spectral", direction=-1) 
 p2 <- p2 + theme_minimal() + theme(panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(), panel.grid.minor.y = element_blank())+ylim(c(0,5))#+xlim(c(1e9,2e9)) # xlim(c(1.5e9,2e9))
 p2
 # & sample(x = rep(c(T,F), times = c(1e5,nrow(snvsdf)-1e5)))
-ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/", sampleid, "_bafpipelineplot_hexbin.pdf"), plot = p2, width = 16, height = 5)
+# ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/", sampleid, "_bafpipelineplot_hexbin.pdf"), plot = p2, width = 16, height = 5)
+ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/", sampleid, "_bafpipelineplot_hexbin.pdf"), plot = p2, width = 24, height = 5)
 
 # ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/temp/", sampleid, "_bafpipelineplot.png"), plot = p2)
 # }
@@ -275,7 +285,11 @@ ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/
 library(ggplot2)
 source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/kataegis/code_kataegis/pcawg.colour.palette.R")
 
-parsum <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits.txt", as.is = T)
+# parsum <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits.txt", as.is = T)
+parsum <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits_v2_2021.txt", as.is = T)
+sum(parsum$tot_phaseable >= 1e4)
+median(parsum[parsum$tot_phaseable >= 1e4, "prec"], na.rm = T)
+median(parsum[parsum$tot_phaseable >= 1e4, "rec"], na.rm = T)
 
 cvect <- pcawg.colour.palette(x = tolower(sub(pattern = "-", replacement = ".", x = unique(parsum$histology_abbreviation))), scheme = "tumour.subtype")
 names(cvect) <- unique(parsum$histology_abbreviation)
@@ -354,8 +368,10 @@ ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/
 ####### add in cosine similarities parallel
 source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/kataegis/code_kataegis/pcawg.colour.palette.R")
 
-parsamplesdf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits_v2.txt", as.is = T)
-INDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out_alphapt1_hetonly/"
+# parsamplesdf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits_v2.txt", as.is = T)
+# INDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out_alphapt1_hetonly/"
+parsamplesdf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits_v2_2021.txt", as.is = T)
+INDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20210212_vafpipeline_out_alphapt1_hetonly/"
 i1files <- list.files(path = INDIR, pattern = "_parallel_thirdallele_cosinesims_het.txt", full.names = T, recursive = T)
 
 i1samples <- sub(pattern = "_parallel_thirdallele_cosinesims_het.txt", replacement = "", x = basename(i1files))
@@ -375,7 +391,7 @@ p1 <- ggplot(data = parsamplesdfm[parsamplesdfm$nparallel >= 1, ]) + geom_densit
 p1
 
 
-parsamplesdfm <- parsamplesdfm[parsamplesdfm$nparallel >= 10 & parsamplesdfm$is_signif, ]
+parsamplesdfm <- parsamplesdfm[which(parsamplesdfm$nparallel >= 10 & parsamplesdfm$is_signif), ]
 parsamplesdfm$sampleid <- factor(parsamplesdfm$sampleid, levels = parsamplesdfm$sampleid[order(parsamplesdfm$nparallel, decreasing = T)])
 
 sum(parsamplesdfm$cosine_hi.all < parsamplesdfm$cosine_low.simulated, na.rm = T)
@@ -392,15 +408,18 @@ p2 <- p2 + scale_color_manual(values = cvect) #+ coord_cartesian(clip = "on", yl
 p2 <- p2 + theme_minimal() + labs(y = "mutation spectrum cosine similarity", x = "samples") + theme(axis.text.x = element_blank(), panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(), panel.grid.minor.y = element_blank())
 p2
 
-ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/parallel_spectra_cosine_sims_new.pdf"), plot = p2, width = 5, height = 3, useDingbats=FALSE)
+write.table(x = parsamplesdfm, file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/parallel_spectra_cosine_sims_new_2021_table.txt", quote = F, row.names = F, sep = "\t")
+ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/parallel_spectra_cosine_sims_new_2021.pdf"), plot = p2, width = 5, height = 3, useDingbats=FALSE)
 
 
 ####### add in cosine similarities third allele
 source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/kataegis/code_kataegis/pcawg.colour.palette.R")
 
+thirdsamplesdf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_summary_20210217.txt", as.is = T, sep = "\t")
 thirdsamplesdf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_summary.txt", as.is = T, sep = "\t")
 # parsamplesdf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits.txt", as.is = T)
-INDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out_alphapt1_hetonly/"
+INDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20210212_vafpipeline_out_alphapt1_hetonly//"
+# INDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out_alphapt1_hetonly/"
 i1files <- list.files(path = INDIR, pattern = "_parallel_thirdallele_cosinesims_het.txt", full.names = T, recursive = T)
 
 i1samples <- sub(pattern = "_parallel_thirdallele_cosinesims_het.txt", replacement = "", x = basename(i1files))
@@ -410,7 +429,9 @@ i1df <- reshape(data = i1df[i1df$type == "third_allele", ], direction = "wide", 
 
 # SIMDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isabreakdown_1plus1_only_writefrac/"
 SIMDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isabreakdown_het_only_writefrac/"
-i1df$frac_snvs <- sapply(X = i1samples, FUN = function(x) read.delim(file = file.path(SIMDIR, x, paste0(x, "_generalstats_effgenfrac1.txt")), as.is = T, header = F)[4,2])
+statsfiles <- file.path(SIMDIR, i1samples, paste0(i1samples, "_generalstats_effgenfrac1.txt"))
+# file.exists(statsfiles)
+i1df$frac_snvs <- sapply(X = statsfiles, FUN = function(x) if (file.exists(x)) read.delim(file = x, as.is = T, header = F)[4,2] else NA)
 
 thirdsamplesdfm <- merge(x = thirdsamplesdf, y = i1df, all.x = T, all.y = F)
 # thirdsamplesdfm <- thirdsamplesdfm[which(thirdsamplesdfm$nbiallelics >= 5 & thirdsamplesdfm$frac_snvs > .01), ] # when using 1plus1 only
@@ -441,8 +462,8 @@ p2 <- p2 + scale_color_manual(values = cvect) #+ coord_cartesian(clip = "on", yl
 p2 <- p2 + theme_minimal() + labs(y = "mutation spectrum cosine similarity", x = "samples") + theme(axis.text.x = element_blank(), panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(), panel.grid.minor.y = element_blank())
 p2
 
-
-ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/thrid_allele_spectra_cosine_sims_het_new.pdf"), plot = p2, width = 5, height = 3, useDingbats=FALSE)
+write.table(x = thirdsamplesdfm, file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/thrid_allele_spectra_cosine_sims_het_new_2021_table.txt", quote = F, row.names = F, sep = "\t")
+ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/thrid_allele_spectra_cosine_sims_het_new_2021.pdf"), plot = p2, width = 5, height = 3, useDingbats=FALSE)
 # ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/thrid_allele_spectra_cosine_sims_1plus1_subsetCALLS.pdf"), plot = p2, width = 12, height = 5)
 
 
@@ -452,11 +473,11 @@ ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/
 ##### plot showing all findings of parallel and third allele variant counts + comparison to what is expected
 source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/kataegis/code_kataegis/pcawg.colour.palette.R")
 
-thirdsamplesdf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_summary.txt", as.is = T, sep = " ")
-thirdvardf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_variants.txt", as.is = T)
+thirdsamplesdf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_summary_20210217.txt", as.is = T, sep = "\t")
+thirdvardf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_variants_20210217.txt", as.is = T)
 
-parsamplesdf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits_v2.txt", as.is = T)
-parvardf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_cleanhits_variants_v2.txt", as.is = T)
+parsamplesdf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits_v2_2021.txt", as.is = T)
+parvardf <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_cleanhits_variants_v2_2021.txt", as.is = T)
 
 SUMTABLE_WHOLE <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/results/summary_table_combined_annotations_v2_JD.txt"
 sumtable_whole <- read.delim(file = SUMTABLE_WHOLE, as.is = T)
@@ -484,10 +505,10 @@ p1 <- p1 + geom_linerange(mapping = aes(ymin = lower,ymax = upper), color = "#e4
 p1 <- p1 + geom_point(mapping = aes(y = nparallel), color = "#e41a1c", alpha = .5)
 p1 <- p1 + geom_point(mapping = aes(y = nbiallelics), color = "#377eb8", alpha = .9)
 p1 <- p1 + scale_y_log10() + annotation_logticks(sides = "l") + theme_minimal() + scale_fill_manual(values = cvect)# + coord_cartesian(ylim = c(.7,2.5e6))
-p1 <- p1 + theme(panel.grid.major.x = element_blank(), axis.text.x = element_blank(), axis.title.x = element_blank())
+p1 <- p1 + theme(panel.grid.major.x = element_blank(), axis.text.x = element_blank(), axis.title.x = element_blank()) + labs(x = "Samples", y = "SNV burden")
 p1
 
-ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/resultssummary_vaf_phasing_overlap_wide.pdf"), plot = p1, width = 19, height = 3.5, useDingbats=FALSE)
+ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/resultssummary_vaf_phasing_overlap_wide_2021.pdf"), plot = p1, width = 19, height = 3.5, useDingbats=FALSE)
 
 
 # plot of spheres showing log2-fold over expected == REDONE ######### final cosine similarity plots & Neff (obs/sim parallel in diploid)
@@ -577,5 +598,119 @@ median(i1df$parfc[which(i1df$parallel > 1)], na.rm = T)
 # p2 <-  p2 + theme_minimal() + scale_fill_continuous(na.value = 'white') + theme(panel.grid = element_blank(), axis.title = element_blank(), axis.text = element_blank())
 # p2
 
+#### plots showing all parallel/third allele variants in hypermut colorectals
+library(BSgenome.Hsapiens.1000genomes.hs37d5)
+sampleid <- "2df02f2b-9f1c-4249-b3b4-b03079cd97d9"
+sampleid <- "14c5b81d-da49-4db1-9834-77711c2b1d38"
 
+
+
+get_mutspectrum <- function(mutations, bsgenome = BSgenome.Hsapiens.1000genomes.hs37d5) {
+  
+  base_type_trinuc_info <- generate_bases_types_trinuc()
+  
+  if (!"trinuc" %in% colnames(mutations))
+    mutations$trinuc <- as.character(get_trinuc_context(mutations = mutations, bsgenome = bsgenome))
+  
+  # reverse complement and data augmentation
+  revcomp <- data.frame(alt = as.character(complement(DNAStringSet(mutations$alt))),
+                        trinuc = as.character(reverseComplement(DNAStringSet(mutations$trinuc))),
+                        stringsAsFactors = F)
+  mut_full <- factor(ifelse(mutations$ref %in% c("C", "T"), 
+                            paste0(mutations$trinuc, ">", mutations$alt),
+                            paste0(revcomp$trinuc, ">", revcomp$alt)),
+                     levels = base_type_trinuc_info[["trinucleotides_mutations"]])
+  
+  # compute frequencies and normalised probabilities
+  muttype_freq <- c(table(mut_full))
+  return(muttype_freq)
+}
+
+
+
+get_mutspectrum_biallelic <- function(mutations, bsgenome = BSgenome.Hsapiens.1000genomes.hs37d5) {
+  
+  base_type_trinuc_info <- generate_bases_types_trinuc()
+  
+  if (!"trinuc" %in% colnames(mutations))
+    mutations$trinuc <- as.character(get_trinuc_context(mutations = mutations, bsgenome = bsgenome))
+  
+  altbases <- split(cbind(mutations$alt1, mutations$alt2), f = 1:nrow(mutations))
+  alt <- ifelse(mutations$ref == "C", ifelse(sapply(altbases, setequal, y = c("A","G")), "A+G", 
+                                             ifelse(sapply(altbases, setequal, y = c("T","G")), "G+T", "T+A")),
+                ifelse(mutations$ref == "G", ifelse(sapply(altbases, setequal, y = c("T","C")), "A+G", 
+                                                    ifelse(sapply(altbases, setequal, y = c("A","C")), "G+T", "T+A")),
+                       ifelse(mutations$ref == "T", ifelse(sapply(altbases, setequal, y = c("A","C")), "A+C", 
+                                                           ifelse(sapply(altbases, setequal, y =c("C","G")), "C+G", "G+A")),
+                              ifelse(sapply(altbases, setequal, y = c("T","G")), "A+C", 
+                                     ifelse(sapply(altbases, setequal, y =c("G","C")), "C+G", "G+A")))
+                ))
+  
+  mut_full <- factor(ifelse(mutations$ref %in% c("C", "T"),
+                            paste0(mutations$trinuc, ">", alt), 
+                            paste0(as.character(reverseComplement(DNAStringSet(mutations$trinuc))), ">", alt)),
+                     levels = paste0(base_type_trinuc_info[["trinucleotides_mutations"]], "+", rep(c("G", "T", "A", "C", "G", "A"), rep(16,6))))
+  
+  # compute frequencies and normalised probabilities
+  muttype_freq <- c(table(mut_full))
+  return(muttype_freq)
+}
+
+
+
+# get the trinucleotide context of a set of point mutations
+get_trinuc_context <- function(mutations, bsgenome = BSgenome.Hsapiens.1000genomes.hs37d5, size = 1) {
+  sequences <- getSeq(x = bsgenome, names = mutations$chr, start = mutations$start - size, end = mutations$end + size, strand = "+")
+  return(sequences)
+}
+
+
+allobshits <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits_v2.txt", as.is = T)
+
+allobshits <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_cleanhits_variants_v2.txt", as.is = T)
+sampleobshits <- allobshits[allobshits$sampleid == sampleid, ]
+
+parmutstab <- as.data.frame(get_mutspectrum(mutations = sampleobshits, bsgenome = BSgenome.Hsapiens.1000genomes.hs37d5))
+colnames(parmutstab) <- "cnt"
+parmutstab$mut1 <- factor(rownames(parmutstab), levels = rownames(parmutstab))
+parmutstab$type <- paste0(substr(parmutstab$mut1,2,2), substr(parmutstab$mut1,4,5))
+parmutstab$trinuc <- substr(parmutstab$mut1,1,3)
+
+bases <- generate_bases_types_trinuc()
+
+# parallel
+p1 <- ggplot(data = parmutstab, mapping = aes(x = mut1)) + 
+  geom_col(mapping = aes(y = cnt, fill = type), show.legend = F, alpha = .6)
+p1 <- p1 + geom_segment(data = data.frame(start = seq(0.65, 96, 16), end = seq(16.35, 97, 16), type = bases$types2),
+                        mapping = aes(x = start, xend = end, y = 1.25*max(parmutstab$cnt), yend = 1.25*max(parmutstab$cnt), color = type), size = 3, show.legend = F, alpha = .6)
+p1 <- p1 + geom_text(data = data.frame(type = bases$types2, pos = seq(8, 96, 16)),
+                     mapping = aes(x = pos, y = 1.3*max(parmutstab$cnt), color = type, label = type),
+                     show.legend = F, family = "mono")
+p1 <- p1 + theme_bw() + scale_x_discrete(labels = parmutstab$trinuc) + scale_fill_manual(values = c("C>A" = "#15bcee","C>G" = "#000000","C>T" = "#e32926","T>A" = "#999999","T>C" = "#a1ce63","T>G" = "#ebc6c4")) +
+  scale_color_manual(values = c("C>A" = "#15bcee","C>G" = "#000000","C>T" = "#e32926","T>A" = "#999999","T>C" = "#a1ce63","T>G" = "#ebc6c4")) +
+  coord_cartesian(ylim = c(0, 1.15*max(parmutstab$cnt)), clip="off") + ylab(label = "Frequency") +
+  theme(axis.text.x = element_text(angle = 90, family = "mono"), panel.grid.major.x = element_blank(),
+        axis.title.x = element_blank(), axis.ticks.x = element_blank(), plot.margin = unit(c(2,.5,.5,.5), "lines"))
+p1
+
+
+
+
+p1 <- ggplot(data = parmutstab, mapping = aes(x = fulltype)) + 
+  geom_col(mapping = aes(y = cnt, fill = typesplit), position = "stack", show.legend = F, alpha = .6)
+p1
+p1 <- p1 + geom_segment(data = data.frame(start = seq(0.65, 96, 16), end = seq(16.35, 97, 16), type = paste0(bases$types2, "+", c("G", "T", "A", "C", "G", "A"))),
+                        mapping = aes(x = start, xend = end, y = 1.25*max(parmutstab$cnt), yend = 1.25*max(parmutstab$cnt), color = type), size = 3, show.legend = F, alpha = .6)
+p1 <- p1 + geom_text(data = data.frame(type = paste0(bases$types2, "+", c("G", "T", "A", "C", "G", "A")), pos = seq(8, 96, 16)),
+                     mapping = aes(x = pos, y = 1.3*max(parmutstab$cnt), color = type, label = type),
+                     show.legend = F, family = "mono")
+p1 <- p1 + theme_bw() + scale_x_discrete(labels = plotdf2$trinuc) + scale_fill_manual(values = c("C>A" = "#15bcee","C>G" = "#000000","C>T" = "#e32926","T>A" = "#999999","T>C" = "#a1ce63","T>G" = "#ebc6c4")) +
+  scale_color_manual(values = c("C>A+G" = "#15bcee","C>G+T" = "#000000","C>T+A" = "#e32926","T>A+C" = "#999999","T>C+G" = "#a1ce63","T>G+A" = "#ebc6c4")) +
+  coord_cartesian(ylim = c(0, 1.15*max(plotdf2$pobs_hi)), clip="off") + ylab(label = "Probability") +
+  theme(axis.text.x = element_text(angle = 90, family = "mono"), panel.grid.major.x = element_blank(),
+        axis.title.x = element_blank(), axis.ticks.x = element_blank(), plot.margin = unit(c(2,.5,.5,.5), "lines"))
+# p1
+
+outfile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out_alphapt1_hetonly/", sampleid, paste0(sampleid, "_thirdallele_snv_spectra_", simsubset))
+ggsave(filename = paste0(outfile, ".pdf"), plot = p1, width = 16, height = 4, useDingbats=FALSE)
 

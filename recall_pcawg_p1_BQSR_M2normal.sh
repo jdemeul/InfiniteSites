@@ -25,7 +25,7 @@ mkdir -p ${OUTBASE}
 if [ ! -f "${OUTBASE}${TAID}_normal_recal_data.table" ]
 then
       echo "Recalibrating BQs normal"
-      gatk --java-options "-Xmx6G" BaseRecalibrator \
+      gatk --java-options "-Xmx16G" BaseRecalibrator \
             -I ${NORMALBAM} \
             -R ${REFGENOME} \
             --known-sites ${KNOWNSNPS} \
@@ -36,7 +36,7 @@ fi
 if [ ! -f "${OUTBASE}${TAID}_normal.aln.recal.bam" ]
 then
 echo "Applying BQSR normal"
-gatk --java-options "-Xmx6G" ApplyBQSR \
+gatk --java-options "-Xmx16G" ApplyBQSR \
       -R ${REFGENOME} \
       -I ${NORMALBAM} \
       --bqsr-recal-file ${OUTBASE}${TAID}_normal_recal_data.table \
@@ -47,7 +47,7 @@ fi
 if [ ! -f "${OUTBASE}${TAID}_normal4PoN_mutect2_snvs_indels.vcf.gz" ]
 then
 echo "Running Mutect2 tumour-only mode PoN"
-gatk --java-options "-Xmx6G" Mutect2 \
+gatk --java-options "-Xmx16G" Mutect2 \
       -R ${REFGENOME} \
       -I ${OUTBASE}${TAID}_normal.aln.recal.bam \
       -tumor ${NAID} \
@@ -60,7 +60,7 @@ fi
 if [ ! -f "${OUTBASE}${TAID}_tumor_recal_data.table" ]
 then
 echo "Recalibrating BQs tumour"
-gatk --java-options "-Xmx6G" BaseRecalibrator \
+gatk --java-options "-Xmx16G" BaseRecalibrator \
       -I ${TUMORBAM} \
       -R ${REFGENOME} \
       --known-sites ${KNOWNSNPS} \
@@ -70,7 +70,7 @@ fi
 if [ ! -f "${OUTBASE}${TAID}_tumor.aln.recal.bam" ]
 then
 echo "Applying BQSR tumour"
-gatk --java-options "-Xmx6G" ApplyBQSR \
+gatk --java-options "-Xmx16G" ApplyBQSR \
       -R ${REFGENOME} \
       -I ${TUMORBAM} \
       --bqsr-recal-file ${OUTBASE}${TAID}_tumor_recal_data.table \

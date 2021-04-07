@@ -28,10 +28,12 @@ SUMTABLE_WHOLE <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_co
 sumtab <- read.delim(file = SUMTABLE_WHOLE, as.is = T)
 sampleids <- sumtab[sumtab$is_preferred, "samplename"]
 
-parhits <- GRanges(read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_cleanhits_variants_v2.txt", as.is = T))
+parhits <- GRanges(read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_cleanhits_variants_v2_2021.txt", as.is = T))
+# parhits <- GRanges(read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_cleanhits_variants_v2.txt", as.is = T))
 parhits <- parhits[!seqnames(parhits) == "Y"]
 parhits <- parhits[parhits$sampleid %in% sampleids]
-thirdhits <- GRanges(read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_variants.txt", as.is = T))
+# thirdhits <- GRanges(read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_variants.txt", as.is = T))
+thirdhits <- GRanges(read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_variants_20210217.txt", as.is = T))
 thirdhits <- thirdhits[!seqnames(thirdhits) == "Y"]
 thirdhits <- thirdhits[thirdhits$sampleid %in% sampleids]
 
@@ -83,12 +85,12 @@ get_snvs <- function(sampleid, snvsmnvdir) {
 
 ### remove all driver muts to reduce influence of selection
 # debug(get_snvs)
-allsnvs <- unlist(GRangesList(mclapply(X = sampleids, FUN = get_snvs, snvsmnvdir = SNVMNVINDELDIR, mc.preschedule = T, mc.cores = 10)))
+allsnvs <- unlist(GRangesList(mclapply(X = sampleids, FUN = get_snvs, snvsmnvdir = SNVMNVINDELDIR, mc.preschedule = T, mc.cores = 16)))
 # allsnvs <- c(allsnvs, thirdhitsforaddition)#[which(thirdhitsforaddition$trinuc == "TCT")])
 # allsnvs$trinucmut <- factor(paste0(allsnvs$trinuc, ">", allsnvs$alt))
 # allsnvs <- subsetByOverlaps(x = allsnvs, ranges = driverhits, invert = T)
 # 
-# # saveRDS(object = allsnvs, file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/data/mutability_check_allsnvs+bial.rds")
+## saveRDS(object = allsnvs, file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/data/mutability_check_allsnvs+bial.rds")
 # allsnvs <- readRDS(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/data/mutability_check_allsnvs+bial.rds")
 # 
 # 
@@ -151,5 +153,5 @@ temp$heptanuc <- getSeq(resize(temp, fix = "center", width = 15), x = BSgenome.H
 names(temp) <- NULL
 View(as.data.frame(temp))
 
-write.table(x = as.data.frame(temp), file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/Parallel_dinucleotidevariants.txt", quote = F, row.names = F, col.names = T, sep = "\t")
+write.table(x = as.data.frame(temp), file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/Parallel_dinucleotidevariants_2021.txt", quote = F, row.names = F, col.names = T, sep = "\t")
 

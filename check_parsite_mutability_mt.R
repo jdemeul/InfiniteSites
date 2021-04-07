@@ -168,7 +168,7 @@ p1 <- p1 + theme_minimal() + theme(panel.grid.minor.x = element_blank(), panel.g
 p1 <- p1 + labs(x = "# SNVs at loci", y = "Frequency of biallelic hits at loci")
 p1
 
-ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/mutation_rate_vs_iallelic_rate.pdf"), plot = p1, width = 10, height = 5, useDingbats=FALSE)
+ggsave(filename = paste0("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/figures/mutation_rate_vs_biallelic_rate.pdf"), plot = p1, width = 10, height = 5, useDingbats=FALSE)
 
 
 

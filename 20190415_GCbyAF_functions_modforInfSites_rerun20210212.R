@@ -2,15 +2,20 @@
 
 # get tumour allelecounts 
 get_tum_allecounts_gr <- function(allelecountsdir, sampleid, bsgenome, reference_alleles, tempdir = TEMPDIR) {
-  allelecountsfile_tum <- file.path(allelecountsdir, paste0(sampleid, "_allelecounts.tar.gz"))
-  if (file.exists(allelecountsfile_tum)) {
-    allelecounts_tum <- load_allelecounts(allelecountsfile = allelecountsfile_tum, scratchdir = tempdir)
+  allelecountsfile_tum <- file.path(allelecountsdir, paste0(sampleid, "_beagle5"), paste0(sampleid, "_alleleFrequencies_chr", c(1:23), ".txt"))
+  if (all(file.exists(allelecountsfile_tum))) {
+    # allelecounts_tum <- load_allelecounts_notarball(allelecountsfile = allelecountsfile_tum, scratchdir = tempdir)
+    allelecounts_tum <- do.call(rbind, lapply(X = allelecountsfile_tum,
+                                          function(x) readr::read_tsv(file = x, col_types = "ciiiiii", col_names = c("chr", "pos", "Count_A", "Count_C", "Count_G", "Count_T", "Good_depth"), comment = "#")))
   } else {
     return(NULL)
   }
   allelecounts_tum_gr <- GRanges(seqnames = allelecounts_tum$chr, IRanges(start = allelecounts_tum$pos, end = allelecounts_tum$pos), seqinfo = seqinfo(bsgenome))
   mcols(allelecounts_tum_gr) <- allelecounts_tum[, -c(1,2)]
-  mcols(allelecounts_tum_gr)[, c("ref", "alt")] <- mcols(reference_alleles)
+  
+  allelematches <- findOverlaps(query = allelecounts_tum_gr, subject = reference_alleles)
+  allelecounts_tum_gr <- allelecounts_tum_gr[queryHits(allelematches)]
+  mcols(allelecounts_tum_gr)[, c("ref", "alt")] <- mcols(reference_alleles[subjectHits(allelematches)])
 
   
   mcols(allelecounts_tum_gr)$refCount <- ifelse(mcols(allelecounts_tum_gr)$ref == "A", mcols(allelecounts_tum_gr)$Count_A,
@@ -27,18 +32,37 @@ get_tum_allecounts_gr <- function(allelecountsdir, sampleid, bsgenome, reference
 }
 
 
+
+load_1000G_reference_alleles_new <- function(refallelesdir, chrominfo = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5)) {
+  refallelefiles <- paste0(refallelesdir, "1kg.phase3.v5a_GRCh37nounref_allele_index_chr", c(1:22, "X"), ".txt")
+  refalleles <- lapply(X = refallelefiles, function(x) read_tsv(file = x, col_types = "iii"))
+  chr <- rep(c(1:22, "X"), sapply(X = refalleles, FUN = nrow))
+  refalleles <- as.data.frame(do.call(what = rbind, args = refalleles))
+  refalleles_gr <- GRanges(seqnames = chr, IRanges(start = refalleles$position, end = refalleles$position), seqinfo = chrominfo)
+  mcols(refalleles_gr)$ref <- factor(refalleles$a0, levels = 1:4, labels = c("A", "C", "G", "T"))
+  mcols(refalleles_gr)$alt <- factor(refalleles$a1, levels = 1:4, labels = c("A", "C", "G", "T"))
+  return(refalleles_gr)
+}
+
+
 # get phased BAFs (for QC purposes, plotting, validation)
 get_phased_BAF <- function(bafdir, sampleid, bsgenome, allelecounts) {
-  phasedbaf_file <- file.path(bafdir, paste0(sampleid, ".BAFsegmented.txt"))
+  phasedbaf_file <- file.path(bafdir, paste0(sampleid, "_beagle5"), paste0(sampleid, ".BAFsegmented.txt"))
   if (file.exists(phasedbaf_file)) {
     phasedbaf <- read_tsv(file = phasedbaf_file, col_types = "cinnn")
   } else {
-    return(NULL)
+    phasedbaf_file_alt <- file.path("/srv/shared/vanloo/bafsegmented_JD", paste0(sampleid, ".BAFsegmented.txt.gz"))
+    if (file.exists(phasedbaf_file_alt)) {
+      phasedbaf <- read_tsv(file = phasedbaf_file_alt, col_types = "cinnn")
+    } else {
+      return(NULL)
+    }
   }
   phasedbaf_gr <- GRanges(seqnames = phasedbaf$Chromosome, IRanges(start = phasedbaf$Position, end = phasedbaf$Position), seqinfo = seqinfo(bsgenome))
   mcols(phasedbaf_gr) <- phasedbaf[, -c(1:2)]
   
   locimatches <- findOverlaps(query = phasedbaf_gr, subject = allelecounts)
+  phasedbaf_gr <- phasedbaf_gr[queryHits(locimatches)]
   mcols(phasedbaf_gr)[, c("ref", "alt", "refCount", "altCount")] <- mcols(allelecounts)[subjectHits(locimatches), c("ref", "alt", "refCount", "altCount")]
   
   # use simple BAFphased to determine which is "major" allele
@@ -58,11 +82,16 @@ get_phased_BAF <- function(bafdir, sampleid, bsgenome, allelecounts) {
 
 # get the GC corrected logR 
 get_GCcorr_logr <- function(logrdir, sampleid, bsgenome) {
-  gccorrlogr_file <- file.path(logrdir, paste0(sampleid, "_allelecounts"), paste0(sampleid, "_mutantLogR_gcCorrected.tab"))
+  gccorrlogr_file <- file.path(logrdir, paste0(sampleid, "_beagle5"), paste0(sampleid, "_mutantLogR_gcCorrected.tab"))
   if (file.exists(gccorrlogr_file)) {
     gccorrlogr <- read_tsv(file = gccorrlogr_file, col_types = "cin")
   } else {
-    return(NULL)
+    gccorrlogr_file_alt <- gsub(pattern = "_gcCorrected", replacement = "", fixed = T, x = gccorrlogr_file)
+    if (file.exists(gccorrlogr_file_alt)) {
+      gccorrlogr <- read_tsv(file = gccorrlogr_file_alt, col_types = "cin")
+    } else {
+      return(NULL)
+    }
   }
   gccorrlogr_gr <- GRanges(seqnames = gccorrlogr$Chromosome, IRanges(start = gccorrlogr$Position, end = gccorrlogr$Position), logr = gccorrlogr[, 3, drop = T],  seqinfo = seqinfo(bsgenome))
 
@@ -104,7 +133,7 @@ summarise_baflogr_segments <- function(sampleid, sampledir, phasedbaf, logr, seg
   # unlikely to call variants present at a VAF of < 5%, so set to BAF so unlikely to call anything.
   mcols(segments_gr)$mu_vaf <- ifelse(mcols(segments_gr)$mu_vaf < .05, mcols(segments_gr)$mu_baf, mcols(segments_gr)$mu_vaf)
   
-  write_tsv(x = as.data.frame(segments_gr), path = file.path(sampledir, paste0(sampleid, "_baf_logr_summarised_segments.txt")))
+  write_tsv(x = as.data.frame(segments_gr), file = file.path(sampledir, paste0(sampleid, "_baf_logr_summarised_segments.txt")))
   
   return(segments_gr)
 }
@@ -312,13 +341,19 @@ test_clean_sites <- function(sampledir, sampleid, segments_gr, phasedbaf_gr, snv
   # get those loci which may have hits within 1kb but no more > 1kb and <= 10 kb
   # gc_candidate_idxs <- which(countOverlaps(query = allhits, subject = allhits, maxgap = testwindow/2) - 
   #                              countOverlaps(query = allhits, subject = allhits, maxgap = conversionlength) == 0)
+  # browser()
 
   outdf <- data.frame(chr = seqnames(snvs_vcf), start = start(snvs_vcf), end = end(snvs_vcf), ref = as.character(snvs_vcf$REF), alt = as.character(snvs_vcf$ALT))
-  outdf <- cbind(outdf, as.data.frame(mcols(snvs_vcf)[, c("VAF", "t_alt_count", "t_ref_count", "snv_near_indel", "Variant_Classification", "immune_locus", "pval", "pfilt",
-                                                          "nhetsnps25bp", "total_cn", "major_cn", "minor_cn", "bafpos_pre", "bafpos_post", "bafpval_pre", "bafpval_post", 
-                                                          "logrpos_pre", "logrpos_post", "logrpval_pre", "logrpval_post",
-                                                          "1000genomes_AF", "n_ref_count", "n_alt_count", "n_total_cov",
-                                                          "Validation_status", "hg38clean")]))
+  outcols <- c("VAF", "t_alt_count", "t_ref_count", "snv_near_indel", "Variant_Classification", "immune_locus", "pval", "pfilt",
+               "nhetsnps25bp", "total_cn", "major_cn", "minor_cn", "bafpos_pre", "bafpos_post", "bafpval_pre", "bafpval_post", 
+               "logrpos_pre", "logrpos_post", "logrpval_pre", "logrpval_post",
+               "1000genomes_AF", "n_ref_count", "n_alt_count", "n_total_cov",
+               "Validation_status", "hg38clean")
+  if (any(!outcols %in% colnames(mcols(snvs_vcf)))) {
+    outcols <- intersect(x = outcols, y = colnames(mcols(snvs_vcf)))
+    print("Subsetting output columns to omit hg38 checks etc")
+  }
+  outdf <- cbind(outdf, as.data.frame(mcols(snvs_vcf)[, outcols]))
   write.table(x = outdf, file = file.path(sampledir, paste0(sampleid, "_snv_mnv_infSites_annotated.txt")), sep = "\t", quote = F, col.names = T, row.names = F)
   
   return(list(hitvariants = snvs_vcf, pseudocount_calibr = pseudocount_calibr, snv_slope = snv_slope))
@@ -637,7 +672,7 @@ annotate_gc_hits <- function(hitvariants, pseudocount_calibr, sampledir, samplei
                              postsnvpvals = character(),
                              nlogrneighbours = integer(),
                              nlogrhits = integer(),
-                             p_empirical = numeric()), path = file.path(sampledir, paste0(sampleid, "_baflogr_gc_results.txt")))
+                             p_empirical = numeric()), file = file.path(sampledir, paste0(sampleid, "_baflogr_gc_results.txt")))
     print(paste0("Sample ", sampleid, ": no conversion events detected"))
     return(hitvariants)
   }
@@ -648,7 +683,7 @@ annotate_gc_hits <- function(hitvariants, pseudocount_calibr, sampledir, samplei
   hitvariants_grlist_annotated <- lapply(X = split(hitvariants, f = 1:length(hitvariants)), FUN = annotate_gc_hit, pseudocount_calibr = pseudocount_calibr, sampledir = sampledir, sampleid = sampleid, baf = baf, logr = logr, seg_gr = seg_gr, snvs = snvs, plotting = plotting, conversionlength = conversionlength, testwindow = testwindow, fdr = fdr)
   hitvariants_gr_annotated <- unlist(GRangesList(hitvariants_grlist_annotated))
   
-  write_tsv(x = as.data.frame(hitvariants_gr_annotated), path = file.path(sampledir, paste0(sampleid, "_baflogr_gc_results.txt")))
+  write_tsv(x = as.data.frame(hitvariants_gr_annotated), file = file.path(sampledir, paste0(sampleid, "_baflogr_gc_results.txt")))
   
   # hitsnvs_gr_annotated <- hitvariants_gr_annotated[mcols(hitvariants_gr_annotated)$type == "snv"]
   snvmatches <- findOverlaps(query = hitvariants_gr_annotated, subject = snvs)
@@ -775,7 +810,7 @@ call_parallel_violations <- function(sampleid, sampledir, phasingdir, nboot = 10
                                        vafhitsdf$bafpval_comb > 1e-2 &
                                        pmin(vafhitsdf$logrpval_pre, vafhitsdf$logrpval_post) > 1e-3 &
                                        vafhitsdf$logrpval_comb > 1e-2 &
-                                       !vafhitsdf$immune_locus &
+                                       # !vafhitsdf$immune_locus &
                                        vafhitsdf$nhetsnps25bp < 2), ]
 
   #summary stats

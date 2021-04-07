@@ -111,7 +111,8 @@ annotate_spectrum <- function(sampleid, trinucs, simsubset = "1plus1") {
   snvs <- data.frame(chr = seqnames(snvs), start = start(snvs), end = end(snvs), ref = as.character(ref(snvs)), alt = as.character(unlist(alt(snvs))))
   
   # load all parallel mutations (i.e. in all but LOH regions)
-  vafhitsfile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out_alphapt1_hetonly/", sampleid, paste0(sampleid, "_snv_mnv_infSites_finalhits.txt"))
+  # vafhitsfile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out_alphapt1_hetonly/", sampleid, paste0(sampleid, "_snv_mnv_infSites_finalhits.txt"))
+  vafhitsfile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20210212_vafpipeline_out_alphapt1_hetonly/", sampleid, paste0(sampleid, "_snv_mnv_infSites_finalhits.txt"))
   vafhitsdf <- read.delim(file = vafhitsfile, as.is = T)
   vafhitsdf$chr <- as.character(vafhitsdf$chr)
   # vafhitsdf$pos <- vafhitsdf$start
@@ -216,7 +217,8 @@ annotate_spectrum <- function(sampleid, trinucs, simsubset = "1plus1") {
             axis.title.x = element_blank(), axis.ticks.x = element_blank(), plot.margin = unit(c(2,.5,.5,.5), "lines"))
     # p1
     
-    outfile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out_alphapt1_hetonly/", sampleid, paste0(sampleid, "_parallel_snv_spectra_", simsubset))
+    outfile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20210212_vafpipeline_out_alphapt1_hetonly/", sampleid, paste0(sampleid, "_parallel_snv_spectra_", simsubset))
+    # outfile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out_alphapt1_hetonly/", sampleid, paste0(sampleid, "_parallel_snv_spectra_", simsubset))
     ggsave(filename = paste0(outfile, ".pdf"), plot = p1, width = 16, height = 4, useDingbats=FALSE)
     write.table(x = plotdf, file = paste0(outfile, ".txt"), quote = F, sep = "\t", row.names = F, col.names = T)
   } else {
@@ -227,7 +229,8 @@ annotate_spectrum <- function(sampleid, trinucs, simsubset = "1plus1") {
 
   
   ### third allele stuff
-  thirdhitsfile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_variants.txt")
+  # thirdhitsfile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_variants.txt")
+  thirdhitsfile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_variants_20210217.txt")
   thirdhitsdf <- read.delim(file = thirdhitsfile, as.is = T)
 
   # if (simsubset == "1plus1") {
@@ -328,8 +331,8 @@ annotate_spectrum <- function(sampleid, trinucs, simsubset = "1plus1") {
       theme(axis.text.x = element_text(angle = 90, family = "mono"), panel.grid.major.x = element_blank(),
             axis.title.x = element_blank(), axis.ticks.x = element_blank(), plot.margin = unit(c(2,.5,.5,.5), "lines"))
     # p1
-    
-    outfile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out_alphapt1_hetonly/", sampleid, paste0(sampleid, "_thirdallele_snv_spectra_", simsubset))
+    outfile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20210212_vafpipeline_out_alphapt1_hetonly/", sampleid, paste0(sampleid, "_thirdallele_snv_spectra_", simsubset))
+    # outfile <- file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out_alphapt1_hetonly/", sampleid, paste0(sampleid, "_thirdallele_snv_spectra_", simsubset))
     ggsave(filename = paste0(outfile, ".pdf"), plot = p1, width = 16, height = 4, useDingbats=FALSE)
     write.table(x = plotdf2, file = paste0(outfile, ".txt"), quote = F, sep = "\t", row.names = F, col.names = T)
   } else {
@@ -341,7 +344,8 @@ annotate_spectrum <- function(sampleid, trinucs, simsubset = "1plus1") {
   colnames(cosdf) <- c("cosine_low", "cosine_med", "cosine_hi")
   cosdf$type <- c("parallel","parallel","third_allele","third_allele")
   cosdf$comparison <- c("all","simulated","all","simulated")
-  write.table(x = cosdf, file = file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out_alphapt1_hetonly/", sampleid, paste0(sampleid, "_parallel_thirdallele_cosinesims_", simsubset, ".txt")), quote = F, sep = "\t", row.names = F, col.names = T)
+  # write.table(x = cosdf, file = file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20190416_vafpipeline_out_alphapt1_hetonly/", sampleid, paste0(sampleid, "_parallel_thirdallele_cosinesims_", simsubset, ".txt")), quote = F, sep = "\t", row.names = F, col.names = T)
+  write.table(x = cosdf, file = file.path("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20210212_vafpipeline_out_alphapt1_hetonly/", sampleid, paste0(sampleid, "_parallel_thirdallele_cosinesims_", simsubset, ".txt")), quote = F, sep = "\t", row.names = F, col.names = T)
   
   return(NULL)
 }
@@ -377,24 +381,24 @@ trinucs <- trinucs/sum(trinucs)
 
 
 # sampleid <- "2df02f2b-9f1c-4249-b3b4-b03079cd97d9"
-# sampleid <- "deb9fbb6-656b-41ce-8299-554efc2379bd"
+# sample id <- "deb9fbb6-656b-41ce-8299-554efc2379bd"
 # sampleid <- "c9f91ded-3b04-4cd1-8ea6-bbc635a8a4f0"
 # sampleid <- "b07bad52-d44c-4b27-900a-960985bfadec"
 # sampleid <- "c9f91ded-3b04-4cd1-8ea6-bbc635a8a4f0"
 # sampleid <- "760881cc-c623-11e3-bf01-24c6515278c0"
-sampleid <- "bd3e88b3-b37c-4641-85fa-d8125ba324ca"
+# sampleid <- "bd3e88b3-b37c-4641-85fa-d8125ba324ca"
 # sampleid <- "3b20d548-2a7d-4031-85a1-425ca7201d7a"
 
-bialsummary <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_summary.txt", as.is = T)
-alsummary <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits_v2.txt", as.is = T)
+bialsummary <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesBiallelicM2recall_summary_20210217.txt", as.is = T)
+alsummary <- read.delim(file = "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/InfSitesByAF_alphapt01_hetonly_summary_cleanhits_v2_2021.txt", as.is = T)
 
-rslurmdf <- data.frame(sampleid = union(bialsummary$sampleid[bialsummary$nbiallelics > 0], alsummary$sampleid), stringsAsFactors = F)
+# rslurmdf <- data.frame(sampleid = union(bialsummary$sampleid[bialsummary$nbiallelics > 0], alsummary$sampleid), stringsAsFactors = F)
+rslurmdf <- data.frame(sampleid = alsummary[which(alsummary$ndivergent >= 10 | alsummary$npar_vaf >= 10), "sampleid"], stringsAsFactors = F)
 
-
-debug(annotate_spectrum)
-annotate_spectrum(sampleid = sampleid, trinucs = trinucs, simsubset = "het")
+# debug(annotate_spectrum)
+# annotate_spectrum(sampleid = sampleid, trinucs = trinucs, simsubset = "het")
 # lapply(X = sampleid, FUN = annotate_spectrum, trinucs = trinucs, simsubset = "1plus1")
-mclapply(X = rslurmdf$sampleid, FUN = annotate_spectrum, trinucs = trinucs, simsubset = "het", mc.preschedule = T, mc.cores = 16)
-
+# mclapply(X = rslurmdf$sampleid, FUN = annotate_spectrum, trinucs = trinucs, simsubset = "het", mc.preschedule = T, mc.cores = 8)
+lapply(X = rslurmdf$sampleid, FUN = annotate_spectrum, trinucs = trinucs, simsubset = "het")
 
 

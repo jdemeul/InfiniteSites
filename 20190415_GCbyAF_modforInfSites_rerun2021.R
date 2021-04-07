@@ -14,20 +14,25 @@ library(boot)
 library(VariantAnnotation)
 library(rslurm)
 library(metap)
+# library(rtracklayer)
 
 
 # genome
 library(BSgenome.Hsapiens.1000genomes.hs37d5)
+library(BSgenome.Hsapiens.NCBI.GRCh38)
 
 source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/genecon/GC_utils.R")
 source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/genecon/getCleanHetSNPs.R")
-source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/code/20190415_GCbyAF_functions_modforInfSites.R")
+source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/code/20190415_GCbyAF_functions_modforInfSites_rerun20210212.R")
 source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/code/check_germline_artefact.R")
 
 RELEASETABLEFILE <- "/srv/shared/vanloo/ICGC_annotations/release_may2016.v1.4.tsv"
 SUMTABLE_WHOLE <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/results/summary_table_combined_annotations_v2_JD.txt"
-REFALLELESDIR <- "/srv/shared/vanloo/pipeline-files/human/references/1000genomes/1000genomes_2012_v3_loci/"
-LOGRDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/data/battenberg_logR/"
+# REFALLELESDIR <- "/srv/shared/vanloo/pipeline-files/human/references/1000genomes/1000genomes_2012_v3_loci/"
+# LOGRDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/data/battenberg_logR/"
+REFALLELESDIR <- "/srv/shared/vanloo/home/mtarabichi/G1000/GRCh37/Simplified/"
+# LOGRDIR <- "/srv/shared/vanloo/home/mtarabichi/Battenberg/BB_pcawg_fullrerun/"
+LOGRDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/partial_BB_rerun/"
 RHOPSI <- "/srv/shared/vanloo/ICGC_consensus_copynumber/20170119_release/consensus.20170217.purity.ploidy.txt.gz"
 CNDIR <- "/srv/shared/vanloo/ICGC_consensus_copynumber/20170119_release/"
 
@@ -39,15 +44,17 @@ rhopsi <- read.delim(file = RHOPSI, as.is = T)
 
 NCORES <- 12
 
-TEMPDIR <- "/home/jdemeul/temp/"
-ALLELECOUNTSDIR <- "/srv/shared/vanloo/ICGC_copynumber/battenberg_raw_files/allelecounts/"
+# TEMPDIR <- "/home/jdemeul/temp/"
+# ALLELECOUNTSDIR <- "/srv/shared/vanloo/ICGC_copynumber/battenberg_raw_files/allelecounts/"
+TEMPDIR <- "/srv/shared/vanloo//home/jdemeul/temp/"
+ALLELECOUNTSDIR <- LOGRDIR
 SNVMNVINDELDIR <- "/srv/shared/vanloo/ICGC_snv_mnv/final_consensus_12oct_passonly/"
 
 # BAFDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/data/battenberg_rerun_005_input_to_finalConsCopynum_BAFphased/"
-BAFDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/data/battenberg_rerun_005_BAFsegmented/"
+BAFDIR <- LOGRDIR
 
 # CNDIR <- "/srv/shared/vanloo/ICGC_consensus_copynumber/20170119_release/"
-BASEOUT <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20200123_vafpipeline_out_alphapt1_hetonly/"
+BASEOUT <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20210212_vafpipeline_out_alphapt1_hetonly/"
 # BAMDIR <- "/srv/shared/vanloo/ICGC/"
 PHASINGDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/results/20181021_hetSNPs_all+phasing_out/"
 BAMDIR <- "/srv/shared/vanloo/ICGC/"
@@ -57,7 +64,7 @@ BAMDIR <- "/srv/shared/vanloo/ICGC/"
 releasetable <- read_pcawg_release_table(release_table_file = RELEASETABLEFILE)
 sumtable_whole <- read.delim(file = SUMTABLE_WHOLE, as.is = T)
 # load reference alleles
-refalleles_gr <- load_1000G_reference_alleles(refallelesdir = REFALLELESDIR)
+refalleles_gr <- load_1000G_reference_alleles_new(refallelesdir = REFALLELESDIR)
 
 # immune loci
 immune_loci <- GRanges(seqnames = c(14, 7, 7, 14, 2, 22, 6), ranges = IRanges(start = c(22090057, 141998851, 38279625, 106032614, 89156674, 22380474, 28477797),
@@ -123,8 +130,10 @@ run_baflogr_pipeline <- function(sampleid) {
                            snvdir = SNVMNVINDELDIR)
   
   ###### check for load
-  if (any(is.null(segments_gr), is.null(phasedbaf_gr), is.null(gccorrlogr_gr), is.null(snvs_vcf)))
+  if (any(is.null(segments_gr), is.null(phasedbaf_gr), is.null(gccorrlogr_gr), is.null(snvs_vcf))) {
+    print(paste0("Missing:", c("CN segments", "Phased BAF", "LogR", "SNVs")[c(is.null(segments_gr), is.null(phasedbaf_gr), is.null(gccorrlogr_gr), is.null(snvs_vcf))], collapse = " "))
     return(NULL)
+  }
   ######
   
   ### annotate variants further for QC
@@ -170,7 +179,7 @@ run_baflogr_pipeline <- function(sampleid) {
   finhits <- call_parallel_violations(sampleid = sampleid,
                                       sampledir = sampledir,
                                       phasingdir = PHASINGDIR,
-                                      nboot = 1000,
+                                      nboot = 100,
                                       alpha = .1)
   
   
@@ -209,8 +218,14 @@ colnames(rslurmdf) <- "sampleid"
 #                                     "e6eda5db-4d4f-418e-b0d4-ed9b3e5259d3", "ea7d37ca-0dac-4ae6-ad03-97c6df3d116d", "f283ed80-8302-4f26-99ed-ea20d101289d",
 #                                     "f38b5d2e-5cab-45c7-bb0a-38b2efc5c156"), stringsAsFactors = T)
 
-# existing_dirs <- list.dirs(path = BASEOUT, full.names = F)[-1]
-# rslurmdf <- rslurmdf[!rslurmdf$sampleid %in% existing_dirs, , drop = F]
+# existing_outfiles <- list.files(path = BASEOUT, pattern = "_InfSites_VAFpipeline_summarystats\\.txt$", full.names = T, recursive = T)
+# # subset to non-empty files
+# existing_outfiles <- gsub(pattern = "_InfSites_VAFpipeline_summarystats.txt", replacement = "", 
+#                           fixed = T, x = basename(existing_outfiles[which(file.size(existing_outfiles) > 0)]))
+# rslurmdf <- rslurmdf[!rslurmdf$sampleid %in% existing_outfiles, , drop = F]
+
+newrunfiles <- gsub(pattern = "_beagle5", replacement = "", x = list.files(path = LOGRDIR), fixed = T)
+rslurmdf <- rslurmdf[rslurmdf$sampleid %in% newrunfiles, , drop = F]
 
 # debug(run_baflogr_pipeline)
 # lapply(X = rslurmdf$sampleid, FUN = run_baflogr_pipeline)
@@ -219,10 +234,20 @@ colnames(rslurmdf) <- "sampleid"
 # debug(annotate_gc_hits)
 # debug(call_parallel_violations)
 # run_baflogr_pipeline(sampleid = rslurmdf[4,])
-# debug(get_phased_BAF)
+# debug(run_baflogr_pipeline)
 # run_baflogr_pipeline(sampleid = sampleid)
-baflogrjob <- slurm_apply(f = run_baflogr_pipeline, params = rslurmdf[,, drop = F], jobname = "baflogr_run5", nodes = 463, cpus_per_node = 1, add_objects = ls(),
-                          pkgs = rev(.packages()), libPaths = .libPaths(), slurm_options = list(exclude = "fat-worker00[1-4],thin-worker01[2-6]"), submit = T)
+# sampleid <- "deb9fbb6-656b-41ce-8299-554efc2379bd"
+# sampleid <- "498ecf81-921d-4df9-a6a4-a625f484e823"
+# debug(test_clean_sites)
+# debug(run_baflogr_pipeline)
+# run_baflogr_pipeline(sampleid = rslurmdf[1,])
+# debug(run_baflogr_pipeline)
+# for (sname in sample(rslurmdf[,"sampleid"], size = 100, replace = F)) {
+#   print(sname)
+#   run_baflogr_pipeline(sampleid = sname)
+# }
+baflogrjob <- slurm_apply(f = run_baflogr_pipeline, params = rslurmdf[,, drop = F], jobname = "baflogr_run_2021_remainder_3", nodes = min(463, nrow(rslurmdf)), cpus_per_node = 1, add_objects = ls(),
+              pkgs = rev(.packages()), libPaths = .libPaths(), slurm_options = list(exclude = c("worker-himem001")), submit = T)
 
 
 # baflogrjob <- slurm_apply(f = run_baflogr_pipeline, params = rslurmdf[,, drop = F], jobname = "precrec", nodes = 250, cpus_per_node = 16, add_objects = ls(),
