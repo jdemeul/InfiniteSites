@@ -493,17 +493,11 @@ generate_isa_breakdown_file_slurmwrap <- function(sampleid) {
   return(NULL)
 }
 
-# options(warn = 2)
-for (smplid in c("10ad692b-4c3d-42de-9b5e-4968441388b3","154f80bd-984c-4792-bb89-20c4da0c08e0","2df02f2b-9f1c-4249-b3b4-b03079cd97d9",
-                 "8a929c55-35a6-4645-bb70-4b85d281b139","93ff786e-0165-4b02-8d27-806d422e93fc","b7f2e85a-3c6a-48b7-8a4f-2dec1d85359d")) {
-generate_isa_breakdown_file_slurmwrap(sampleid = smplid)
-}
 
-#
-# isajob <- slurm_apply(f = generate_isa_breakdown_file_slurmwrap, params = rslurmdf[,,drop=F], jobname = "isajob15", nodes = 358, cpus_per_node = 1, add_objects = ls(),
-#                           pkgs = rev(.packages()), libPaths = .libPaths(), submit = T, slurm_options = list(exclude = "fat-worker00[1-4]"))
-# 
-# 
+isajob <- slurm_apply(f = generate_isa_breakdown_file_slurmwrap, params = rslurmdf[,,drop=F], jobname = "isajob15", nodes = 358, cpus_per_node = 1, add_objects = ls(),
+                          pkgs = rev(.packages()), libPaths = .libPaths(), submit = T, slurm_options = list(exclude = "fat-worker00[1-4]"))
+
+
 
 
 

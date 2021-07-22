@@ -111,23 +111,23 @@ run_phasing_pipeline <- function(sampleid) {
   
   system(command = paste0("gzip -f ", file.path(outdir, paste0(sampleid, "_tumour_snv-snp_phased.txt"))), wait = T)
   
-  # if (length(normal_bam_file) == 0) {
-  #   return(NULL)
-  # }
-  # 
-  # print(paste0("Phasing normal"))
-  # snv_phasing(germ_loci_file = file.path(outdir, paste0(sampleid, "_germ_loci.txt")),
-  #             som_vcf_file = snv_mnvfile,
-  #             outfile = file.path(outdir, paste0(sampleid, "_normal_snv-snp_phased.txt")),
-  #             bam_file = normal_bam_file,
-  #             bai_file = paste0(normal_bam_file, ".bai"),
-  #             max_distance = max_distance,
-  #             minMapQ = minMapQ,
-  #             max_mm_read = max_mm_read,
-  #             max_mm_pair = max_mm_pair,
-  #             minBaseQ = minBaseQ,
-  #             ncores = NCORES, preschedule = T,
-  #             chrominfo = genome_seqinfo)
+  if (length(normal_bam_file) == 0) {
+    return(NULL)
+  }
+  
+  print(paste0("Phasing normal"))
+  snv_phasing(germ_loci_file = file.path(outdir, paste0(sampleid, "_germ_loci.txt")),
+              som_vcf_file = snv_mnvfile,
+              outfile = file.path(outdir, paste0(sampleid, "_normal_snv-snp_phased.txt")),
+              bam_file = normal_bam_file,
+              bai_file = paste0(normal_bam_file, ".bai"),
+              max_distance = max_distance,
+              minMapQ = minMapQ,
+              max_mm_read = max_mm_read,
+              max_mm_pair = max_mm_pair,
+              minBaseQ = minBaseQ,
+              ncores = NCORES, preschedule = T,
+              chrominfo = genome_seqinfo)
   
   return(NULL)
 }

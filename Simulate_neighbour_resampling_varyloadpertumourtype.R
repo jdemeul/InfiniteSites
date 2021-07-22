@@ -337,10 +337,6 @@ p1
 
 #### quick plot of curve
 
-#### quick plot of curve
-
-# melresfiles <- list.files(path = "/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20210616_SampleBasedSim_pertumourtype/", pattern = "_infsites_totals_samplebasedsim.txt", full.names = T, recursive = T)
-# melresfiles <- list.files(path = "/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20210616_SampleBasedSim_pertumourtype/", pattern = "_infsites_permut_samplebasedsim.txt", full.names = T, recursive = T)
 melresfiles <- list.files(path = "/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20210616_SampleBasedSim_pertumourtype_NODRIVERS/", pattern = "_infsites_permut_samplebasedsim.txt", full.names = T, recursive = T)
 # temp <- read.delim(file = "/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20210616_SampleBasedSim_pertumourtype_NODRIVERS/Biliary-AdenoCA/Biliary-AdenoCA_load_65536_infsites_permut_samplebasedsim.txt", as.is = T)
 
