@@ -34,7 +34,8 @@ get_tum_allecounts_gr <- function(allelecountsdir, sampleid, bsgenome, reference
 
 
 load_1000G_reference_alleles_new <- function(refallelesdir, chrominfo = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5)) {
-  refallelefiles <- paste0(refallelesdir, "1kg.phase3.v5a_GRCh37nounref_allele_index_chr", c(1:22, "X"), ".txt")
+  # refallelefiles <- paste0(refallelesdir, "1kg.phase3.v5a_GRCh37nounref_allele_index_chr", c(1:22, "X"), ".txt")
+  refallelefiles <- paste0(refallelesdir, "chr", c(1:22, "X"), ".1kg.phase3.v5a_GRCh37nounref_allele_index.txt")
   refalleles <- lapply(X = refallelefiles, function(x) read_tsv(file = x, col_types = "iii"))
   chr <- rep(c(1:22, "X"), sapply(X = refalleles, FUN = nrow))
   refalleles <- as.data.frame(do.call(what = rbind, args = refalleles))
@@ -51,7 +52,8 @@ get_phased_BAF <- function(bafdir, sampleid, bsgenome, allelecounts) {
   if (file.exists(phasedbaf_file)) {
     phasedbaf <- read_tsv(file = phasedbaf_file, col_types = "cinnn")
   } else {
-    phasedbaf_file_alt <- file.path("/srv/shared/vanloo/bafsegmented_JD", paste0(sampleid, ".BAFsegmented.txt.gz"))
+    phasedbaf_file_alt <- file.path("/camp/project/proj-emedlab-vanloo/bafsegmented_JD", paste0(sampleid, ".BAFsegmented.txt.gz"))
+    print(paste0("No segmented BAF data found at ", phasedbaf_file, ". \n Using segmented BAF data from ", phasedbaf_file_alt))
     if (file.exists(phasedbaf_file_alt)) {
       phasedbaf <- read_tsv(file = phasedbaf_file_alt, col_types = "cinnn")
     } else {
@@ -147,10 +149,13 @@ get_snv_mnvs <- function(sampleid, snvdir) {
     return(NULL)
   }
   # drop variants without allele counts reported
-  som_vcf <- som_vcf[which(!is.na(info(som_vcf)$t_alt_count) & !is.na(info(som_vcf)$t_ref_count))]
+  #### MOD here to NOT BOTH NA and fix missing read counts by setting to 0
+  som_vcf <- som_vcf[which(!(is.na(info(som_vcf)$t_alt_count) & is.na(info(som_vcf)$t_ref_count)))]
   som <- rowRanges(som_vcf)
   mcols(som) <- cbind(mcols(som), info(som_vcf))
   som$ALT <- unlist(som$ALT)
+  som$t_alt_count[is.na(som$t_alt_count)] <- 0
+  som$t_ref_count[is.na(som$t_ref_count)] <- 0
   # snvhits <- findOverlaps(query = segments_gr, subject = som_vcf)
   # som_vcf <- som_vcf[subjectHits(snvhits)] # not all are within BAF segments, male X has large part removed
   # mcols(som_vcf)$seg <- queryHits(snvhits)
@@ -171,7 +176,7 @@ get_consensus_cn <- function(sampleid, cndir, bsgenome) {
 
 
 
-test_clean_sites <- function(sampledir, sampleid, segments_gr, phasedbaf_gr, snvs_vcf, bsgenome, logr, ncores = 12, presched = T, pseudocountrange = c(50, 1000), subsample_optim = T, recompute_pseudocoverage = T, immune_loci) {
+test_clean_sites <- function(sampledir, sampleid, segments_gr, phasedbaf_gr, snvs_vcf, bsgenome, logr, ncores = 12, presched = T, pseudocountrange = c(50, 1000), subsample_optim = T, recompute_pseudocoverage = T, immune_loci = NA, germline_svs = NA) {
 
   ## drop segment if < 100 hetSNPs / vector
   # segments_gr <- segments_gr[mcols(segments_gr)$nhetsnps >= minsegmentSNPcount]
@@ -239,6 +244,12 @@ test_clean_sites <- function(sampledir, sampleid, segments_gr, phasedbaf_gr, snv
   # subset SNVs to those on (long) segments (and PAR when appriopriate)
   snvseghits <- findOverlaps(query = snvs_vcf, subject = segments_gr)
   snvs_vcf <- snvs_vcf[queryHits(snvseghits)]
+  
+  if (!is.na(germline_svs)) {
+    mcols(snvs_vcf)$germline_sv <- overlapsAny(query = snvs_vcf, subject = germline_svs)
+  } else {
+    mcols(snvs_vcf)$germline_sv <-  F
+  }
   
   # independent filtering (check to see whether useful at PCAWG coverage)
     pfilter <- mcmapply(size = mcols(snvs_vcf)$t_alt_count + mcols(snvs_vcf)$t_ref_count,
@@ -344,7 +355,7 @@ test_clean_sites <- function(sampledir, sampleid, segments_gr, phasedbaf_gr, snv
   # browser()
 
   outdf <- data.frame(chr = seqnames(snvs_vcf), start = start(snvs_vcf), end = end(snvs_vcf), ref = as.character(snvs_vcf$REF), alt = as.character(snvs_vcf$ALT))
-  outcols <- c("VAF", "t_alt_count", "t_ref_count", "snv_near_indel", "Variant_Classification", "immune_locus", "pval", "pfilt",
+  outcols <- c("VAF", "t_alt_count", "t_ref_count", "snv_near_indel", "Variant_Classification", "immune_locus", "germline_sv", "pval", "pfilt",
                "nhetsnps25bp", "total_cn", "major_cn", "minor_cn", "bafpos_pre", "bafpos_post", "bafpval_pre", "bafpval_post", 
                "logrpos_pre", "logrpos_post", "logrpval_pre", "logrpval_post",
                "1000genomes_AF", "n_ref_count", "n_alt_count", "n_total_cov",
@@ -810,6 +821,8 @@ call_parallel_violations <- function(sampleid, sampledir, phasingdir, nboot = 10
                                        vafhitsdf$bafpval_comb > 1e-2 &
                                        pmin(vafhitsdf$logrpval_pre, vafhitsdf$logrpval_post) > 1e-3 &
                                        vafhitsdf$logrpval_comb > 1e-2 &
+                                       !vafhitsdf$germline_sv &
+                                       vafhitsdf$pfilt < 1e-3 &
                                        # !vafhitsdf$immune_locus &
                                        vafhitsdf$nhetsnps25bp < 2), ]
 
@@ -870,6 +883,12 @@ get_metrics <- function(vafhitsdf_clean, sampleid, sampledir, nboot, alpha = .1,
   }
   
   return(perfmets)
+}
+
+
+get_pval_cutoff <- function(df, alpha = .1) {
+  cutoff <- -log10(sum(p.adjust(df$pval, method = "fdr") <= alpha, 1 , na.rm = T)*alpha/sum(!is.na(df$pval), 1))
+  return(cutoff)
 }
 
 

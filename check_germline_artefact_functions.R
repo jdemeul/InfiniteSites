@@ -237,25 +237,29 @@ annot_validation_status <- function(snvs_vcf) {
 library(rtracklayer)
 library(BSgenome.Hsapiens.NCBI.GRCh38)
 library(reshape2)
-hg19tohg38chainfile <- "/srv/shared/vanloo/home/jdemeul/projects/2019_Rambow_MELA/data/hg19ToHg38.over.chain"
-hg19tohg38chain <- import.chain(con = hg19tohg38chainfile)
 
 
-add_snv_qc <- function(sampleid, sampledir, releasetable, snvs_vcf, hg19tohg38, normalbam, minbq = 20, minmq = 35, ncores = NCORES, bamdir = BAMDIR) {
+add_snv_qc <- function(sampleid, sampledir, releasetable, snvs_vcf, hg19tohg38, normalbam, minbq = 20, minmq = 35, ncores = NCORES, bamdir = BAMDIR, checkbam = T) {
   
   annotfile <- file.path(sampledir, paste0(sampleid, ".consensus.20160830.somatic.snv_mnv.annot.gr.RDS"))
   
   if (file.exists(annotfile)) {
     snvs_vcf <- readRDS(file = annotfile)
   } else {
-    # annotate matched normal read counts/alt alleles
-    if (grepl(pattern = "/srv/shared/vanloo/ICGC/", x = bamdir, fixed = T)) {
-      normalbam <- file.path(bamdir, paste0(releasetable[releasetable$tumor_wgs_aliquot_id == sampleid, c("dcc_project_code", "normal_wgs_bwa_alignment_bam_file_name")], collapse = "/WGS/"))
+    if (checkbam) {
+      # annotate matched normal read counts/alt alleles
+      if (grepl(pattern = "/srv/shared/vanloo/ICGC/", x = bamdir, fixed = T)) {
+        normalbam <- file.path(bamdir, paste0(releasetable[releasetable$tumor_wgs_aliquot_id == sampleid, c("dcc_project_code", "normal_wgs_bwa_alignment_bam_file_name")], collapse = "/WGS/"))
+      } else {
+        normalbam <- file.path(bamdir, releasetable[releasetable$tumor_wgs_aliquot_id == sampleid, "dcc_project_code"], sampleid, paste0(sampleid, "_normal.aln.recal.bam"))
+      }
+      snvs_vcf <- annot_normal_read_counts(normalbam = normalbam, snvs_vcf = snvs_vcf, minbq = minbq, minmq = minmq, ncores = ncores)
     } else {
-      normalbam <- file.path(bamdir, releasetable[releasetable$tumor_wgs_aliquot_id == sampleid, "dcc_project_code"], sampleid, paste0(sampleid, "_normal.aln.recal.bam"))
+      snvs_vcf$n_ref_count <- NA
+      snvs_vcf$n_alt_count <- NA
+      snvs_vcf$n_total_cov <- NA
     }
-    snvs_vcf <- annot_normal_read_counts(normalbam = normalbam, snvs_vcf = snvs_vcf, minbq = minbq, minmq = minmq, ncores = ncores)
-    
+
     # anntoate validation status
     snvs_vcf <- annot_validation_status(snvs_vcf = snvs_vcf)
     

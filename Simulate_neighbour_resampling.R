@@ -6,12 +6,13 @@ library(BSgenome.Hsapiens.1000genomes.hs37d5)
 library(VariantAnnotation)
 
 ### start by reading in mutational profiles and determining which samples can be resampled from which
-OUTDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20200603_SampleBasedSim/"
-isaviolreffile <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isavioltypes_reffile.txt"
+# OUTDIR <- "/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20200603_SampleBasedSim/"
+OUTDIR <- "/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20210617_SampleBasedSim_NODRIVERS/"
+isaviolreffile <- "/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/infinite_sites/results/isavioltypes_reffile.txt"
 # dir.create(path = OUTDIR, showWarnings = F)
 
 NSIMS <- 1000
-NCORES <- 16
+NCORES <- 12
 
 
 
@@ -43,7 +44,8 @@ sample_single_iteration <- function(mutload, snvstosample, overlapsobj, violrefi
   mut1 <- idxv[insitesviolations$mut1]
   mut2 <- idxv[insitesviolations$mut2]
   alhitsdf <- data.frame(mut1 = bases$trinucleotides_mutations[pmin(mut1, mut2)], mut2 = bases$trinucleotides_mutations[pmax(mut1, mut2)])
-  isaviolcounts <- data.frame(table(mut1 = factor(alhitsdf$mut1, levels = bases$trinucleotides_mutations), mut2 = factor(alhitsdf$mut2, levels = bases$trinucleotides_mutations)))[violrefidx, "Freq"]
+  isaviolcounts <- data.frame(table(mut1 = factor(alhitsdf$mut1, levels = bases$trinucleotides_mutations), 
+                                    mut2 = factor(alhitsdf$mut2, levels = bases$trinucleotides_mutations)))[violrefidx, "Freq"]
 
   return(isaviolcounts)
 }
@@ -123,14 +125,25 @@ simulate_infsites_sample_based <- function(sampleid, allsnvmnv, useablesamples, 
 ###### Setting up data and performing basic checks of feasibility
 isaviolref <- read.delim(file = isaviolreffile, as.is = T)
 
-RELEASETABLEFILE <- "/srv/shared/vanloo/ICGC_annotations/release_may2016.v1.4.tsv"
+RELEASETABLEFILE <- "/camp/project/proj-emedlab-vanloo/ICGC_annotations/release_may2016.v1.4.tsv"
 reltable <- read.delim(file = RELEASETABLEFILE, as.is = T)
-combinedannots <- read.delim("/srv/shared/vanloo/ICGC_annotations/summary_table_combined_annotations_v2.txt", as.is = T)
+combinedannots <- read.delim("/camp/project/proj-emedlab-vanloo/ICGC_annotations/summary_table_combined_annotations_v2.txt", as.is = T)
 preferred_whitelisted_samples <- intersect(x =  combinedannots[combinedannots$is_preferred, "samplename"],
                                            y = unlist(strsplit(x = reltable[which(reltable$wgs_exclusion_white_gray == "Whitelist"), "tumor_wgs_aliquot_id"], split = ",")))
 
 
-SIGINSAMPLESFILE <- "/srv/shared/vanloo/ICGC_signatures/20180322_release/PCAWG_sigProfiler_SBS_signatures_in_samples_waliqID.csv"
+
+#### UPDATE 20210616 remove crappy PRAD-CA samples at this point
+bad_PRAD_CA_samples <- c("08e1d976-6c39-428e-a4c2-f655b675683e", "108b67d4-5d66-46da-8675-6acae643b76f", "120f01d1-8884-4aca-a1cb-36b207b2aa3a", "126ee433-d345-4cac-882a-c91831a24690", "48c33a30-557b-4ecf-8066-5b4b068b5e3a", "4c5228b5-bf31-4abd-a47c-d088e16dba13", 
+                         "4d11d7da-1204-437e-87b1-e8337a67c9a8", "61a48c69-4f7d-4dc6-aff7-88a6c33137df", "6d936ef9-b5df-44d3-831f-528bf8ddc131", "7ae9b843-488f-459c-8c0d-c81dcae57f99", "7dd2dc62-0eb4-4d45-86f1-e9e9377181ca", "887616c5-06a7-4e83-948c-3546202349fb", 
+                         "a08ec059-7592-4698-bb45-25a9c3680c23", "ab8a55ed-ff47-4cad-ad91-52b9dc25aca7", "b2ec0fd0-fbcf-4abc-ad80-4ae444e30b55", "b33978c6-a855-4f9d-a0b0-d79453b9de41", "b33b7c8f-0b0d-4009-88a7-48e9d9cae6cb", "c08f65a0-bf4c-462e-9d07-ad56b3adcac8", 
+                         "dcc938da-3e45-4c2f-ae0f-47817be04518", "e41bc2ec-3e0b-4c37-806b-3f6f25c8c4db", "f0f2030e-17fd-4dd9-9104-899e59d72ed8", "f5378545-17d4-4a64-a57e-f6c91ef4cb3a", "f640d377-98e9-41d3-8761-61eb33072c65")
+preferred_whitelisted_samples <- setdiff(x = preferred_whitelisted_samples, y = bad_PRAD_CA_samples)
+####
+
+
+
+SIGINSAMPLESFILE <- "/camp/project/proj-emedlab-vanloo/ICGC_signatures/20180322_release/PCAWG_sigProfiler_SBS_signatures_in_samples_waliqID.csv"
 sigs <- read.csv(file = SIGINSAMPLESFILE, as.is = T)
 # drop all greylisted and excluded samples
 sigs <- sigs[which(sigs$Sample.Name %in% preferred_whitelisted_samples), ]
@@ -178,12 +191,39 @@ checkdf$nfold <- checkdf$samplespace / (checkdf$mutload/2)
 
 bases <- generate_bases_types_trinuc()
 
-# vcffiles <- list.files(path = "/srv/shared/vanloo/ICGC_snv_mnv/final_consensus_12oct_passonly/", pattern = ".somatic.snv_mnv.vcf.gz$", full.names = T, recursive = T)
-vcffiles <- paste0("/srv/shared/vanloo/ICGC_snv_mnv/final_consensus_12oct_passonly/snv_mnv/", sigs$Sample.Name, ".consensus.20160830.somatic.snv_mnv.vcf.gz")
+
+
+#### Addition 20210616 >> remove drivers
+alldrivers <- read.delim(file = "/camp/project/proj-emedlab-vanloo/ICGC_driver/TableS2_driver_point_mutations_annotation_20180110.txt", as.is = T)
+alldriversgr <- GRanges(seqnames = alldrivers$chr, ranges = IRanges(start = alldrivers$pos, width = nchar(alldrivers$ref)), REF = alldrivers$ref, ALT = alldrivers$alt, sampleid = alldrivers$sample, seqinfo = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
+alldriversgr <- alldriversgr[alldriversgr$REF %in% c("A", "C", "G", "T") & alldriversgr$ALT %in% c("A", "C", "G", "T")]
+names(alldriversgr) <- paste0(alldriversgr$sampleid, "_", seqnames(alldriversgr), ":", start(alldriversgr), "_", alldriversgr$REF, "/", alldriversgr$ALT)
+
+filterdrivers <- T
+#####
+
+
+
+# vcffiles <- list.files(path = "/camp/project/proj-emedlab-vanloo/ICGC_snv_mnv/final_consensus_12oct_passonly/", pattern = ".somatic.snv_mnv.vcf.gz$", full.names = T, recursive = T)
+vcffiles <- paste0("/camp/project/proj-emedlab-vanloo/ICGC_snv_mnv/final_consensus_12oct_passonly/snv_mnv/", sigs$Sample.Name, ".consensus.20160830.somatic.snv_mnv.vcf.gz")
 all(file.exists(vcffiles))
 # scanVcfHeader(vcffiles[1])
 allsnvmnv <- GRangesList(mclapply(X = vcffiles, FUN = function(x) rowRanges(readVcf(file = x, param = ScanVcfParam(fixed = c("ALT"), info = NA, geno = NA))), mc.cores = NCORES, mc.preschedule = T))
 names(allsnvmnv) <- sigs$Sample.Name
+
+if (filterdrivers) {
+  #### Addition 20210616 >> remove drivers
+  allsnvmnv_nodriv <- GRangesList(mclapply(X = names(allsnvmnv), FUN = function(x, snvs, driv) {
+    print(paste0("Running ", x))
+    outgr <- subsetByOverlaps(x = snvs[[x]], ranges = driv[driv$sampleid %in% x], invert = T, type = "equal")
+    return(outgr)
+  }, snvs = allsnvmnv, driv = alldriversgr, mc.cores = NCORES, mc.preschedule = T))
+  names(allsnvmnv_nodriv) <- names(allsnvmnv)
+  allsnvmnv <- allsnvmnv_nodriv
+  rm(allsnvmnv_nodriv, alldrivers, alldriversgr)
+}
+
+
 
 # some checks - found one snv-mnv file is missing, likely blacklisted at late stage, remove from useable samples
 # notinsigfile <- setdiff(x = names(allsnvmnv), y = sigs$Sample.Name)
@@ -192,6 +232,9 @@ names(allsnvmnv) <- sigs$Sample.Name
 # 
 # nosnvfile
 #### this is where the fun stuff starts
+## savving env image
+save.image(file = file.path(OUTDIR, "allsnvs_NODRIVERS"))
+# load(file = file.path(OUTDIR, "allsnvs_NODRIVERS.RDS"))
 
 
 # debug(simulate_infsites_sample_based)
@@ -199,7 +242,6 @@ for (sampleid in checkdf[checkdf$nsimsamples > 0 & checkdf$nfold >= 1, "sampleid
   print(paste0("Running sample ", sampleid))
   simulate_infsites_sample_based(sampleid = sampleid, allsnvmnv = allsnvmnv, useablesamples = useablesamples, nsims = NSIMS, outbase = OUTDIR, isaviolref = isaviolref, ncores = NCORES, bases = bases)
 }
-
 
 
 

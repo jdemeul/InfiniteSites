@@ -1,10 +1,17 @@
-#### reboot on 21/08/2018
-#### rewrite the SNP-SNV
+###!/usr/bin/env Rscript
+args = commandArgs(trailingOnly=TRUE)
+
+#### precancer ASCAT preprocessing
+TUMOURNAME <- as.character(args[1])
+# TUMOURNAME <- "S094"
+print(TUMOURNAME)
+
 
 ### Run heterozygous SNP collection and phasing pipelines
 
 library(readr)
 library(GenomicRanges)
+library(rtracklayer)
 # library(parallel)
 library(ggplot2)
 library(MASS)
@@ -12,7 +19,7 @@ library(VGAM)
 library(ROCR)
 library(boot)
 library(VariantAnnotation)
-library(rslurm)
+# library(rslurm)
 library(metap)
 # library(rtracklayer)
 
@@ -21,68 +28,79 @@ library(metap)
 library(BSgenome.Hsapiens.1000genomes.hs37d5)
 library(BSgenome.Hsapiens.NCBI.GRCh38)
 
-source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/genecon/GC_utils.R")
-source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/genecon/getCleanHetSNPs.R")
-source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/code/20190415_GCbyAF_functions_modforInfSites_rerun20210212.R")
-source("/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/code/check_germline_artefact.R")
+source("/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/gene_conversion/genecon/GC_utils.R")
+source("/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/gene_conversion/genecon/getCleanHetSNPs.R")
+source("/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/infinite_sites/code/code/20190415_GCbyAF_functions_modforInfSites_rerun20210629.R")
+source("/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/infinite_sites/code/code/check_germline_artefact.R")
 
-RELEASETABLEFILE <- "/srv/shared/vanloo/ICGC_annotations/release_may2016.v1.4.tsv"
-SUMTABLE_WHOLE <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/results/summary_table_combined_annotations_v2_JD.txt"
-# REFALLELESDIR <- "/srv/shared/vanloo/pipeline-files/human/references/1000genomes/1000genomes_2012_v3_loci/"
-# LOGRDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/data/battenberg_logR/"
-REFALLELESDIR <- "/srv/shared/vanloo/home/mtarabichi/G1000/GRCh37/Simplified/"
-# LOGRDIR <- "/srv/shared/vanloo/home/mtarabichi/Battenberg/BB_pcawg_fullrerun/"
-LOGRDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/partial_BB_rerun/"
-RHOPSI <- "/srv/shared/vanloo/ICGC_consensus_copynumber/20170119_release/consensus.20170217.purity.ploidy.txt.gz"
-CNDIR <- "/srv/shared/vanloo/ICGC_consensus_copynumber/20170119_release/"
+RELEASETABLEFILE <- "/camp/project/proj-vanloo-secure/PCAWG/ICGC_annotations/release_may2016.v1.4.tsv"
+SUMTABLE_WHOLE <- "/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/gene_conversion/results/summary_table_combined_annotations_v2_JD.txt"
+# REFALLELESDIR <- "/camp/project/proj-emedlab-vanloo/pipeline-files/human/references/1000genomes/1000genomes_2012_v3_loci/"
+# LOGRDIR <- "/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/gene_conversion/data/battenberg_logR/"
+REFALLELESDIR <- "/camp/project/proj-emedlab-vanloo/mtarabichi/G1000/GRCh37/Simplified/"
+LOGRDIR <- "/camp/project/proj-emedlab-vanloo/mtarabichi/Battenberg/BB_pcawg_fullrerun/"
+# LOGRDIR <- "/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/infinite_sites/results/partial_BB_rerun/"
+RHOPSI <- "/camp/project/proj-vanloo-secure/PCAWG/ICGC_consensus_copynumber/20170119_release/consensus.20170217.purity.ploidy.txt.gz"
+CNDIR <- "/camp/project/proj-vanloo-secure/PCAWG/ICGC_consensus_copynumber/20170119_release/"
 
+
+hg19tohg38chainfile <- "/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/infinite_sites/data/hg19-38fixes/hg19ToHg38.over.chain"
+hg19tohg38chain <- import.chain(con = hg19tohg38chainfile)
+
+# Annotate/remove common germline CNVs/SVs (notably deletions)
+dbvarcommon1kg <- read.delim(file = "/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/infinite_sites/data/hg19-38fixes/dbVar_common_1000g.bed.gz", as.is = T)
+dbvarcommon1kg <- GRanges(seqnames = dbvarcommon1kg$X.chrom, ranges = IRanges(start = dbvarcommon1kg$chromStart, end = dbvarcommon1kg$chromEnd), type = dbvarcommon1kg$type, freq = as.numeric(gsub(pattern = "ALL_AF=", replacement = "", x = dbvarcommon1kg$frequency)))
+seqlevelsStyle(dbvarcommon1kg) <- "Ensembl"
 
 ####
 
 # rhopsi
 rhopsi <- read.delim(file = RHOPSI, as.is = T)
 
-NCORES <- 12
+NCORES <- 5
 
 # TEMPDIR <- "/home/jdemeul/temp/"
-# ALLELECOUNTSDIR <- "/srv/shared/vanloo/ICGC_copynumber/battenberg_raw_files/allelecounts/"
-TEMPDIR <- "/srv/shared/vanloo//home/jdemeul/temp/"
+# ALLELECOUNTSDIR <- "/camp/project/proj-emedlab-vanloo/ICGC_copynumber/battenberg_raw_files/allelecounts/"
+# TEMPDIR <- "/camp/project/proj-emedlab-vanloo/home/jdemeul/temp/"
+TEMPDIR <- "/tmp/"
 ALLELECOUNTSDIR <- LOGRDIR
-SNVMNVINDELDIR <- "/srv/shared/vanloo/ICGC_snv_mnv/final_consensus_12oct_passonly/"
+SNVMNVINDELDIR <- "/camp/project/proj-vanloo-secure/PCAWG/ICGC_snv_mnv/final_consensus_12oct_passonly/"
 
-# BAFDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/data/battenberg_rerun_005_input_to_finalConsCopynum_BAFphased/"
+# BAFDIR <- "/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/gene_conversion/data/battenberg_rerun_005_input_to_finalConsCopynum_BAFphased/"
 BAFDIR <- LOGRDIR
 
-# CNDIR <- "/srv/shared/vanloo/ICGC_consensus_copynumber/20170119_release/"
-BASEOUT <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20210212_vafpipeline_out_alphapt1_hetonly/"
-# BAMDIR <- "/srv/shared/vanloo/ICGC/"
-PHASINGDIR <- "/srv/shared/vanloo/home/jdemeul/projects/2016-17_ICGC/gene_conversion/results/20181021_hetSNPs_all+phasing_out/"
-BAMDIR <- "/srv/shared/vanloo/ICGC/"
+# CNDIR <- "/camp/project/proj-emedlab-vanloo/ICGC_consensus_copynumber/20170119_release/"
+# BASEOUT <- "/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20210212_vafpipeline_out_alphapt1_hetonly/"
+BASEOUT <- "/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/infinite_sites/results/20210702_vafpipeline_out_alphapt1_hetonly/"
+# BAMDIR <- "/camp/project/proj-emedlab-vanloo/ICGC/"
+PHASINGDIR <- "/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/gene_conversion/results/20181021_hetSNPs_all+phasing_out/"
+BAMDIR <- "/camp/project/proj-emedlab-vanloo/ICGC/"
 
 
 ### load one time only
 releasetable <- read_pcawg_release_table(release_table_file = RELEASETABLEFILE)
 sumtable_whole <- read.delim(file = SUMTABLE_WHOLE, as.is = T)
 # load reference alleles
-refalleles_gr <- load_1000G_reference_alleles_new(refallelesdir = REFALLELESDIR)
-
+# refalleles_gr <- load_1000G_reference_alleles_new(refallelesdir = REFALLELESDIR)
+# saveRDS(object = refalleles_gr, file = "/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/infinite_sites/data/refalleles.RDS", compress = F)
+refalleles_gr <- readRDS("/camp/project/proj-emedlab-vanloo/jdemeul/projects/2016-17_ICGC/infinite_sites/data/refalleles.RDS")
 # immune loci
 immune_loci <- GRanges(seqnames = c(14, 7, 7, 14, 2, 22, 6), ranges = IRanges(start = c(22090057, 141998851, 38279625, 106032614, 89156674, 22380474, 28477797),
                                                                               end = c(23021075, 142510972, 38407656, 107288051, 90274235, 23265085, 33448354)), seqinfo = seqinfo(BSgenome.Hsapiens.1000genomes.hs37d5))
 
+sampleid <- TUMOURNAME
 
 ####################
 # start with sample ID (i.e. tumour wgs aliquot ID)
 # sampleid <- releasetable[1, "tumor_wgs_aliquot_id"]
 # sampleid <- "deb9fbb6-656b-41ce-8299-554efc2379bd"
-# sampleid <- "1ac15380-04a2-42dd-8ade-28556a570e80"
-# sampleid <- "04aa6b77-8074-480c-872e-a1a47afa5314"
+# sampleid <- "05780d48-80e7-4d70-b00c-081f8a9519f2"
+# sampleid <- "909f3c5d-89fc-419b-a654-75ac1dbb149f"
 # sampleid <- "ca8fa9f5-3190-440d-9879-22e33d05ca6c"
 # sampleid <- "887616c5-06a7-4e83-948c-3546202349fb"
 ####################
 
-
-run_baflogr_pipeline <- function(sampleid) {
+# run_baflogr_pipeline <- function(sampleid) {
   
   print(paste0("Loading data for sample ", sampleid))
   
@@ -142,7 +160,8 @@ run_baflogr_pipeline <- function(sampleid) {
                                releasetable = releasetable,
                                snvs_vcf = snvs_vcf,
                                hg19tohg38 = hg19tohg38chain,
-                               ncores = NCORES)
+                               ncores = NCORES,
+                         checkbam = F)
   
   ### additional QC
 
@@ -169,7 +188,8 @@ run_baflogr_pipeline <- function(sampleid) {
                                   subsample_optim = T,
                                   pseudocountrange = c(50, 1000),
                                   recompute_pseudocoverage = F,
-                                  immune_loci = immune_loci)
+                                  immune_loci = immune_loci,
+                                  germline_svs = dbvarcommon1kg)
   
   
   print(paste0("Annotating with phasing and deriving violations for sample ", sampleid))
@@ -198,15 +218,15 @@ run_baflogr_pipeline <- function(sampleid) {
   #                                           fdr = .05,
   #                                           plotting = T)
   
-  return(NULL)
-}
+  # return(NULL)
+# }
 
 
-
-
-#### rslurm submission command
-rslurmdf <- releasetable[, "tumor_wgs_aliquot_id", drop = F]
-colnames(rslurmdf) <- "sampleid"
+# 
+# 
+# #### rslurm submission command
+# rslurmdf <- releasetable[, "tumor_wgs_aliquot_id", drop = F]
+# colnames(rslurmdf) <- "sampleid"
 
 # rslurmdf <- data.frame(sampleid = c("00aa769d-622c-433e-8a8a-63fb5c41ea42", "0bfd1043-5142-3662-e050-11ac0c486501", "0bfd1043-7343-fdd0-e050-11ac0c484cab", 
 #                                     "0bfd1043-817c-e3e4-e050-11ac0c4860c5", "0bfd1068-3fc5-a95b-e050-11ac0c4860c3", "0bfd1068-3fe4-a95b-e050-11ac0c4860c3", 
@@ -223,9 +243,9 @@ colnames(rslurmdf) <- "sampleid"
 # existing_outfiles <- gsub(pattern = "_InfSites_VAFpipeline_summarystats.txt", replacement = "", 
 #                           fixed = T, x = basename(existing_outfiles[which(file.size(existing_outfiles) > 0)]))
 # rslurmdf <- rslurmdf[!rslurmdf$sampleid %in% existing_outfiles, , drop = F]
-
-newrunfiles <- gsub(pattern = "_beagle5", replacement = "", x = list.files(path = LOGRDIR), fixed = T)
-rslurmdf <- rslurmdf[rslurmdf$sampleid %in% newrunfiles, , drop = F]
+# 
+# newrunfiles <- gsub(pattern = "_beagle5", replacement = "", x = list.files(path = LOGRDIR), fixed = T)
+# rslurmdf <- rslurmdf[rslurmdf$sampleid %in% newrunfiles, , drop = F]
 
 # debug(run_baflogr_pipeline)
 # lapply(X = rslurmdf$sampleid, FUN = run_baflogr_pipeline)
@@ -246,8 +266,8 @@ rslurmdf <- rslurmdf[rslurmdf$sampleid %in% newrunfiles, , drop = F]
 #   print(sname)
 #   run_baflogr_pipeline(sampleid = sname)
 # }
-baflogrjob <- slurm_apply(f = run_baflogr_pipeline, params = rslurmdf[,, drop = F], jobname = "baflogr_run_2021_remainder_3", nodes = min(463, nrow(rslurmdf)), cpus_per_node = 1, add_objects = ls(),
-              pkgs = rev(.packages()), libPaths = .libPaths(), slurm_options = list(exclude = c("worker-himem001")), submit = T)
+# baflogrjob <- slurm_apply(f = run_baflogr_pipeline, params = rslurmdf[,, drop = F], jobname = "baflogr_run_2021_remainder_3", nodes = min(463, nrow(rslurmdf)), cpus_per_node = 1, add_objects = ls(),
+#               pkgs = rev(.packages()), libPaths = .libPaths(), slurm_options = list(exclude = c("worker-himem001")), submit = T)
 
 
 # baflogrjob <- slurm_apply(f = run_baflogr_pipeline, params = rslurmdf[,, drop = F], jobname = "precrec", nodes = 250, cpus_per_node = 16, add_objects = ls(),
